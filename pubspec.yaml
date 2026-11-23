@@ -1,0 +1,63 @@
+name: paribarik_bachat_kosh
+description: Paribarik Bachat Kosh
+publish_to: 'none'
+
+version: 1.0.4+5
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+    
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  firebase_storage: ^12.4.10
+  local_auth: ^2.3.0
+  shared_preferences: ^2.5.3
+  cloud_firestore: ^5.6.12
+  firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^19.5.0
+  image_picker: ^1.1.2
+  file_picker: ^11.0.3
+  flutter_image_compress: ^2.4.0
+  supabase_flutter: ^2.10.3
+  nepali_date_picker: ^7.0.0
+  package_info_plus: ^8.3.1
+  url_launcher: ^6.3.2
+  http: ^1.5.0
+  path_provider: ^2.1.5
+  open_filex: ^4.7.0
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  flutter_native_html_to_pdf: ^3.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+   
+  assets:
+    - assets/family_background.png
+    - assets/official_logo.png
+    - assets/nabil_bank_qr.jpg
+    - assets/member1.jpg
+    - assets/member2.jpg
+    - assets/member3.jpg
+    - assets/member4.jpg
+    - assets/member5.jpg
+    - assets/member6.jpg
+    - assets/atm_member1.jpg
+    - assets/atm_member2.jpg
+    - assets/atm_member3.jpg
+    - assets/atm_member4.jpg
+    - assets/atm_member5.jpg
+    - assets/atm_member6.jpg
+    - assets/fonts/NotoSansDevanagari-VariableFont_wdth,wght.ttf
+    - assets/fonts/NotoSansDevanagari-Regular.ttf
+dependency_overrides:
+  archive: 4.4.0

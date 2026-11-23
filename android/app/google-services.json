@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "616890611099",
+    "project_id": "paribarik-bachat-kosh",
+    "storage_bucket": "paribarik-bachat-kosh.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:616890611099:android:a8e82caffe865d680b9d3e",
+        "android_client_info": {
+          "package_name": "com.paribarikbachatkosh.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYzIfJEkVRgt72zzgTOa0eDYIGxLfWla4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

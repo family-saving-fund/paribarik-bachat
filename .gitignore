@@ -1,0 +1,7 @@
+
+
+# Private Android release signing material (never commit these files)
+/android/key.properties
+/android/app/release-keystore.jks
+/android/app/*.keystore
+/android/app/*.jks
