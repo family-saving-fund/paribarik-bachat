@@ -1,0 +1,922 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.uid == 'j5HwNs8IKvbi45m0JKkjuConQvC2';
+    }
+
+    function isLoanVoter(loanId, voterUid) {
+      return signedIn()
+        && exists(
+          /databases/$(database)/documents/loans/$(loanId)
+        )
+        && get(
+          /databases/$(database)/documents/loans/$(loanId)
+        ).data.voterUids is list
+        && get(
+          /databases/$(database)/documents/loans/$(loanId)
+        ).data.voterUids.hasAny([voterUid]);
+    }
+
+    // खर्च प्रस्ताव
+    match /expense_withdrawal_proposals/{proposalId} {
+      allow read: if signedIn();
+
+      allow create: if isAdmin()
+        && request.resource.data.proposalId == proposalId
+        && request.resource.data.submittedByUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.category is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.status == 'voting'
+        && request.resource.data.eligibleVoterUids is list
+        && request.resource.data.eligibleVoterCount is int
+        && request.resource.data.requiredApprovals is int
+        && request.resource.data.voters is list;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'category',
+          'amount',
+          'bsDate',
+          'expenseDate',
+          'description',
+          'votingHistory',
+          'votingRound',
+          'status',
+          'votingStatus',
+          'eligibleVoterUids',
+          'eligibleVoterCount',
+          'voters',
+          'eligibleAdminTieBreakVoters',
+          'adminTieBreakVote',
+          'adminTieBreakVotedByUid',
+          'adminTieBreakVotedByName',
+          'adminTieBreakVotedAt',
+          'yesVotes',
+          'noVotes',
+          'requiredApprovals',
+          'votingStartedAt',
+          'votingDeadline',
+          'approvedAt',
+          'rejectedAt',
+          'resubmissionAllowedAt',
+          'disbursedAt',
+          'disbursedByUid',
+          'disbursedByName',
+          'proposalVoucherUrl',
+          'proposalVoucherFileName',
+          'proposalVoucherUploadedByUid',
+          'proposalVoucherUploadedAt',
+          'paymentVoucherUrl',
+          'paymentVoucherFileName',
+          'paymentVoucherUploadedByUid',
+          'paymentVoucherUploadedAt',
+          'updatedAt'
+        ]);
+
+      // सदस्यको व्यक्तिगत मतदान
+      match /votes/{voterUid} {
+        allow read: if isAdmin()
+          || (signedIn() && request.auth.uid == voterUid);
+
+        allow create: if signedIn()
+          && request.auth.uid == voterUid
+          && get(/databases/$(database)/documents/expense_withdrawal_proposals/$(proposalId)).data.status == 'voting'
+          && get(/databases/$(database)/documents/expense_withdrawal_proposals/$(proposalId)).data.votingDeadline > request.time
+          && get(/databases/$(database)/documents/expense_withdrawal_proposals/$(proposalId)).data.eligibleVoterUids.hasAny([request.auth.uid])
+          && request.resource.data.keys().hasAll(['uid', 'vote', 'votedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'vote', 'votedAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.vote in ['yes', 'no']
+          && request.resource.data.votedAt == request.time;
+
+        allow update, delete: if false;
+      }
+    }
+
+    // बीमा भुक्तानी इतिहास: Admin मात्र
+match /insurance_claim_payments/{paymentId} {
+  allow read: if isAdmin();
+
+  allow create: if isAdmin()
+    && request.resource.data.claimId is string
+    && request.resource.data.uid is string
+    && request.resource.data.memberName is string
+    && request.resource.data.claimantName is string
+    && request.resource.data.amount is number
+    && request.resource.data.amount > 0
+    && request.resource.data.bsDate is string
+    && request.resource.data.adDate is string
+    && request.resource.data.adminUid == request.auth.uid
+    && request.resource.data.adminName is string
+    && request.resource.data.createdAt == request.time;
+
+  allow update, delete: if false;
+}
+
+// बीमा भुक्तानी Lock: Admin मात्र
+match /system_locks/{lockId} {
+  allow read: if isAdmin();
+
+  allow create: if isAdmin()
+    && lockId == 'insurance_payout'
+    && request.resource.data.revision is int
+    && request.resource.data.revision == 1
+    && request.resource.data.lastPayoutId is string
+    && request.resource.data.updatedBy == request.auth.uid
+    && request.resource.data.lastPayoutAt == request.time;
+
+  allow update: if isAdmin()
+    && lockId == 'insurance_payout'
+    && request.resource.data.diff(resource.data).affectedKeys()
+      .hasOnly([
+        'revision',
+        'lastPayoutId',
+        'lastPayoutAt',
+        'updatedBy'
+      ])
+    && request.resource.data.revision == resource.data.revision + 1
+    && request.resource.data.lastPayoutId is string
+    && request.resource.data.updatedBy == request.auth.uid
+    && request.resource.data.lastPayoutAt == request.time;
+
+  allow delete: if false;
+}
+    
+    // बीमा दाबी आवेदन
+match /insurance_claims/{claimId} {
+  allow read: if signedIn()
+    && (
+      isAdmin()
+      || resource.data.uid == request.auth.uid
+    );
+
+  allow create: if signedIn()
+    && request.resource.data.uid == request.auth.uid
+    && request.resource.data.memberName is string
+    && request.resource.data.claimFor in ['self', 'family']
+    && request.resource.data.claimantName is string
+    && request.resource.data.applicationDateBS is string
+    && request.resource.data.expenseAmount is number
+    && request.resource.data.expenseAmount > 5000
+    && request.resource.data.insuranceAmount is number
+    && request.resource.data.insuranceAmount > 0
+    && request.resource.data.reason is string
+    && request.resource.data.details is string
+    && request.resource.data.photoUrls is list
+    && request.resource.data.photoUrls.size() > 0
+    && request.resource.data.status == 'pending'
+    && request.resource.data.paymentStatus == 'unpaid'
+    && request.resource.data.createdAt == request.time
+    && request.resource.data.fiscalYearStart is int
+    && existsAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart)))
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.uid == request.auth.uid
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.fiscalYearStart == request.resource.data.fiscalYearStart
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.lastAction == 'reserve'
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.lastClaimId == claimId
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.reservedAmount <= 100000
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.reservedAmount >= request.resource.data.insuranceAmount
+    && getAfter(/databases/$(database)/documents/insurance_annual_limits/$(request.auth.uid + '_' + string(request.resource.data.fiscalYearStart))).data.limitAmount == 100000;
+
+  allow update, delete: if isAdmin();
+}
+
+match /insurance_annual_limits/{annualId} {
+  function validAnnualData() {
+    return request.resource.data.uid is string
+      && request.resource.data.fiscalYearStart is int
+      && annualId == request.resource.data.uid + '_' + string(request.resource.data.fiscalYearStart)
+      && request.resource.data.reservedAmount is number
+      && request.resource.data.reservedAmount >= 0
+      && request.resource.data.reservedAmount <= 100000
+      && request.resource.data.limitAmount == 100000
+      && request.resource.data.revision is int
+      && request.resource.data.updatedAt == request.time;
+  }
+
+  allow read: if signedIn()
+    && (isAdmin() || annualId.matches('^' + request.auth.uid + '_[0-9]{4}$'));
+
+  allow create: if isAdmin()
+      && validAnnualData()
+      && request.resource.data.lastAction == 'initialize'
+      && request.resource.data.revision == 1
+    || signedIn()
+      && request.resource.data.uid == request.auth.uid
+      && validAnnualData()
+      && request.resource.data.lastAction == 'reserve'
+      && request.resource.data.reservedAmount > 0
+      && request.resource.data.revision == 1
+      && request.resource.data.lastClaimId is string
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.uid == request.auth.uid
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.fiscalYearStart == request.resource.data.fiscalYearStart
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.status == 'pending'
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.insuranceAmount is number
+      && request.resource.data.reservedAmount >= getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.insuranceAmount;
+
+  allow update: if isAdmin()
+      && validAnnualData()
+      && request.resource.data.uid == resource.data.uid
+      && request.resource.data.fiscalYearStart == resource.data.fiscalYearStart
+      && request.resource.data.lastAction == 'release'
+      && request.resource.data.reservedAmount < resource.data.reservedAmount
+      && request.resource.data.revision == resource.data.revision + 1
+      && request.resource.data.lastClaimId is string
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.uid == resource.data.uid
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.fiscalYearStart == resource.data.fiscalYearStart
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.status == 'rejected'
+      && request.resource.data.reservedAmount == resource.data.reservedAmount - getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.insuranceAmount
+    || signedIn()
+      && request.resource.data.uid == request.auth.uid
+      && resource.data.uid == request.auth.uid
+      && validAnnualData()
+      && request.resource.data.fiscalYearStart == resource.data.fiscalYearStart
+      && request.resource.data.lastAction == 'reserve'
+      && request.resource.data.reservedAmount > resource.data.reservedAmount
+      && request.resource.data.revision == resource.data.revision + 1
+      && request.resource.data.lastClaimId is string
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.uid == request.auth.uid
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.fiscalYearStart == resource.data.fiscalYearStart
+      && getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.status == 'pending'
+      && request.resource.data.reservedAmount == resource.data.reservedAmount + getAfter(/databases/$(database)/documents/insurance_claims/$(request.resource.data.lastClaimId)).data.insuranceAmount;
+
+  allow delete: if false;
+}
+
+    // सदस्य विवरण
+match /member/{uid} {
+  allow read: if signedIn();
+
+  // सदस्यले आफ्नै व्यक्तिगत विवरण मात्र परिवर्तन गर्न पाउने
+  allow update: if signedIn()
+    && request.auth.uid == uid
+
+    // नाम, इमेल र भूमिका जस्ता मूल विवरण सुरक्षित राख्ने
+    && request.resource.data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'mobileNumber',
+        'dateOfBirth',
+        'address',
+        'occupation',
+        'citizenshipNumber',
+        'familyMembers',
+        'profileUpdatedAt'
+      ])
+
+    // व्यक्तिगत विवरणको प्रकार जाँच
+    && request.resource.data.mobileNumber is string
+    && request.resource.data.dateOfBirth is string
+    && request.resource.data.address is string
+    && request.resource.data.occupation is string
+    && request.resource.data.citizenshipNumber is string
+    && request.resource.data.familyMembers is list
+    && request.resource.data.profileUpdatedAt == request.time;
+
+  // सदस्य विवरण नयाँ बनाउन वा हटाउन नपाउने
+  allow create, delete: if false;
+}
+
+    // जन्ममिति र नाता: Admin मात्र
+    match /member_private_details/{uid} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dashboard_anniversaries/{eventId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // मासिक बचत
+    match /monthly_savings/{recordId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // अन्य आम्दानी तथा संस्थाको कोषको Ledger
+    // पहिलेका दुवै fund_transactions नियमको संयुक्त अनुमति
+    match /fund_transactions/{transactionId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // जरिमाना सूचना
+    match /late_payment_notices/{noticeId} {
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.memberUid == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.memberUid == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'auto_approved'
+          && request.resource.data.reviewedBy == 'system'
+          && resource.data.deadlineAt <= request.time
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'status',
+              'reviewedAt',
+              'reviewedBy',
+              'adminNote'
+            ])
+        );
+
+      allow delete: if false;
+    }
+
+    // जरिमाना माफी इतिहास
+    match /penalty_waivers/{waiverId} {
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+        );
+
+      allow create: if isAdmin()
+        && request.resource.data.memberUid is string
+        && request.resource.data.monthKey is string
+        && request.resource.data.waivedAmount is int
+        && request.resource.data.waivedAmount > 0
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.adminUid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // ऋण आवेदन
+    match /loans/{loanId} {
+
+      // सबै लगइन सदस्यले ऋण आवेदन हेर्न पाउने
+      allow read: if signedIn();
+
+      // सदस्यले आफ्नो आवेदन मात्र पेस गर्न पाउने
+      allow create: if signedIn()
+        && request.resource.data.memberUid == request.auth.uid
+        && request.resource.data.loanId == loanId
+        && request.resource.data.memberName is string
+        && request.resource.data.requestedAmount is int
+        && request.resource.data.requestedAmount > 0
+        && request.resource.data.durationMonths is int
+        && request.resource.data.durationMonths >= 1
+        && request.resource.data.durationMonths <= 12
+        && request.resource.data.purpose is string
+        && request.resource.data.bsDate is string
+        && request.resource.data.adDate is string
+        && request.resource.data.status == 'voting'
+        && request.resource.data.voterUids is list
+        && request.resource.data.voterUids.size() == 5
+        && !request.resource.data.voterUids.hasAny([
+          request.auth.uid
+        ])
+        && request.resource.data.submittedAt == request.time;
+
+      // मतदान वा Admin को निर्णय
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.status == 'voting'
+          && resource.data.voterUids is list
+          && resource.data.voterUids.hasAny([
+            request.auth.uid
+          ])
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'voters',
+              'yesVotes',
+              'noVotes',
+              'status',
+              'votingStatus',
+              'rejectedBy',
+              'votingCompletedAt',
+              'rejectedAt',
+              'fourthAgreeAt',
+              'adminDeadline'
+            ])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // सदस्यको ऋण आवेदन स्थिति
+    match /loan_member_status/{uid} {
+
+      // आवेदन तथा मतदान प्रक्रियाका लागि आवश्यक स्थिति पढ्न पाउने
+      allow read: if signedIn();
+
+      // आफ्नै आवेदनको लक राख्ने
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.memberUid == uid;
+
+      // Admin, सम्बन्धित सदस्य वा दुई असहमतिपछि मतदानकर्ता
+      // ले आवश्यक स्थिति परिवर्तन गर्न पाउने
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.memberUid == uid
+        )
+        || (
+          signedIn()
+          && resource.data.activeApplicationId is string
+          && exists(
+            /databases/$(database)/documents/loans/$(resource.data.activeApplicationId)
+          )
+          && get(
+            /databases/$(database)/documents/loans/$(resource.data.activeApplicationId)
+          ).data.voterUids.hasAny([request.auth.uid])
+          && getAfter(
+            /databases/$(database)/documents/loans/$(resource.data.activeApplicationId)
+          ).data.status == 'rejected'
+          && request.resource.data.activeApplicationId == null
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'activeApplicationId',
+              'cooldownUntil',
+              'updatedAt'
+            ])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ऋण मतदान
+    match /loan_votes/{voteId} {
+
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.loanId is string
+        && request.resource.data.voterUid is string
+        && request.resource.data.round is int
+        && request.resource.data.round in [1, 2]
+        && request.resource.data.vote in [
+          'agree',
+          'disagree'
+        ]
+        && (
+          (
+            request.resource.data.source == 'member'
+            && request.resource.data.voterUid == request.auth.uid
+            && (
+              (
+                request.resource.data.round == 1
+                && voteId == request.resource.data.loanId
+                  + '_round1_' + request.auth.uid
+              )
+              ||
+              (
+                request.resource.data.round == 2
+                && voteId == request.resource.data.loanId
+                  + '_round2_' + request.auth.uid
+              )
+            )
+          )
+          ||
+          (
+            request.resource.data.source == 'admin'
+            && isAdmin()
+            && request.resource.data.adminUid == request.auth.uid
+            && (
+              (
+                request.resource.data.round == 1
+                && voteId == request.resource.data.loanId
+                  + '_round1_' + request.resource.data.voterUid
+              )
+              ||
+              (
+                request.resource.data.round == 2
+                && voteId == request.resource.data.loanId
+                  + '_round2_' + request.resource.data.voterUid
+              )
+            )
+          )
+        )
+        && !exists(
+          /databases/$(database)/documents/loan_votes/$(voteId)
+        )
+        && isLoanVoter(
+          request.resource.data.loanId,
+          request.resource.data.voterUid
+        )
+        && get(
+          /databases/$(database)/documents/loans/$(request.resource.data.loanId)
+        ).data.status == 'voting';
+
+      allow update, delete: if false;
+    }
+
+    // पुरानो जमानत प्रणाली
+    match /loan_guarantors/{responseId} {
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.guarantorUid == request.auth.uid
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.guarantorUid == request.auth.uid
+        && request.resource.data.loanId is string
+        && request.resource.data.decision in [
+          'accepted',
+          'rejected'
+        ];
+
+      allow update, delete: if false;
+    }
+
+    // ऋण किस्ता
+    match /loan_installments/{installmentId} {
+
+      allow read: if signedIn();
+
+      // Admin वा सदस्यले आफ्नै सक्रिय ऋणमा किस्ता पेस गर्न पाउने
+      allow create: if isAdmin()
+        || (
+          signedIn()
+          && request.resource.data.keys().hasAll([
+            'loanId',
+            'memberUid',
+            'memberName',
+            'amount',
+            'paymentBsDate',
+            'receiptBase64',
+            'receiptSizeBytes',
+            'status',
+            'submittedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'loanId',
+            'memberUid',
+            'memberName',
+            'amount',
+            'paymentBsDate',
+            'receiptBase64',
+            'receiptSizeBytes',
+            'status',
+            'submittedAt'
+          ])
+          && request.resource.data.memberUid == request.auth.uid
+          && request.resource.data.loanId is string
+          && exists(
+            /databases/$(database)/documents/loans/$(request.resource.data.loanId)
+          )
+          && get(
+            /databases/$(database)/documents/loans/$(request.resource.data.loanId)
+          ).data.memberUid == request.auth.uid
+          && get(
+            /databases/$(database)/documents/loans/$(request.resource.data.loanId)
+          ).data.status == 'active'
+          && request.resource.data.memberName
+            == get(
+              /databases/$(database)/documents/loans/$(request.resource.data.loanId)
+            ).data.memberName
+          && request.resource.data.amount is int
+          && request.resource.data.amount > 0
+          && request.resource.data.paymentBsDate is string
+          && request.resource.data.receiptBase64 is string
+          && request.resource.data.receiptBase64.size() > 0
+          && request.resource.data.receiptBase64.size() <= 700000
+          && request.resource.data.receiptSizeBytes is int
+          && request.resource.data.receiptSizeBytes > 0
+          && request.resource.data.receiptSizeBytes <= 512000
+          && request.resource.data.status == 'pending'
+          && request.resource.data.submittedAt == request.time
+        );
+
+      // स्वीकृति वा अस्वीकृति Admin ले मात्र गर्न पाउने
+      allow update, delete: if isAdmin();
+    }
+
+    // भुक्तानी इतिहास
+    match /payment_history/{paymentId} {
+      allow read: if signedIn();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // भुक्तानी
+    match /payments/{paymentId} {
+
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+          || (
+            resource.data.paymentType == 'donation'
+            && resource.data.status == 'approved'
+          )
+        );
+
+      allow create: if signedIn()
+        && (
+          isAdmin()
+          || request.resource.data.memberUid == request.auth.uid
+        )
+        && request.resource.data.status == 'pending'
+        && request.resource.data.amount is int
+        && request.resource.data.amount > 0
+        && getAfter(
+          /databases/$(database)/documents/payment_locks/$(request.resource.data.memberUid)
+        ).data.pendingPaymentId == paymentId;
+
+      allow update, delete: if isAdmin();
+    }
+
+    // भुक्तानी लक
+    match /payment_locks/{uid} {
+
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || request.auth.uid == uid
+        );
+
+      allow create: if signedIn()
+        && (
+          isAdmin()
+          || request.auth.uid == uid
+        )
+        && !exists(
+          /databases/$(database)/documents/payment_locks/$(uid)
+        )
+        && request.resource.data.keys().hasOnly([
+          'pendingPaymentId',
+          'memberUid',
+          'updatedAt'
+        ])
+        && request.resource.data.memberUid == uid
+        && request.resource.data.pendingPaymentId is string;
+
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == uid
+          && resource.data.memberUid == uid
+        );
+
+      allow delete: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == uid
+          && resource.data.memberUid == uid
+        );
+    }
+
+    // सदस्यका सूचनाहरू
+    match /notifications/{notificationId} {
+
+      // Admin वा सम्बन्धित सदस्यले मात्र सूचना पढ्न पाउने
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+        );
+
+      // Admin वा आफ्नै सूचनाका लागि सदस्यले मात्र सूचना बनाउन पाउने
+      allow create: if signedIn()
+        && request.resource.data.memberUid is string
+        && (
+          isAdmin()
+          || request.resource.data.memberUid == request.auth.uid
+        )
+        && request.resource.data.isRead == false;
+
+      // सम्बन्धित सदस्यले मात्र पढेको चिन्ह लगाउन पाउने
+      allow update: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+        )
+        && resource.data.isRead == false
+        && request.resource.data.isRead == true
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['isRead']);
+
+      allow delete: if false;
+    }
+
+    // स्थायी Financial Ledger
+    match /financial_ledger/{eventId} {
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+        );
+
+      allow create: if isAdmin()
+        && request.resource.data.eventId == eventId
+        && request.resource.data.recordedByUid == request.auth.uid
+        && request.resource.data.memberUid is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount >= 0
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // Admin Audit History
+    match /admin_audit_logs/{eventId} {
+      allow read: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.eventId == eventId
+        && request.resource.data.adminUid == request.auth.uid
+        && request.resource.data.action is string
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // सदस्यको आफ्नै व्यक्तिगत Profile
+    match /member_profiles/{uid} {
+
+      // आफ्नो Profile सदस्यले र सबै Profile Admin ले पढ्न पाउने
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == uid);
+
+      // नयाँ Profile बनाउन
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll([
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'phoneNumber',
+          'permanentAddress',
+          'currentAddress',
+          'occupation',
+          'education',
+          'emergencyContactName',
+          'emergencyContactPhone',
+          'createdAt',
+          'updatedAt'
+        ])
+        && (
+          !('phoneNumber' in request.resource.data)
+          || request.resource.data.phoneNumber is string
+        )
+        && (
+          !('permanentAddress' in request.resource.data)
+          || request.resource.data.permanentAddress is string
+        )
+        && (
+          !('currentAddress' in request.resource.data)
+          || request.resource.data.currentAddress is string
+        )
+        && (
+          !('occupation' in request.resource.data)
+          || request.resource.data.occupation is string
+        )
+        && (
+          !('education' in request.resource.data)
+          || request.resource.data.education is string
+        )
+        && (
+          !('emergencyContactName' in request.resource.data)
+          || request.resource.data.emergencyContactName is string
+        )
+        && (
+          !('emergencyContactPhone' in request.resource.data)
+          || request.resource.data.emergencyContactPhone is string
+        )
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // आफ्नो Profile मात्र अपडेट गर्न
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll([
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'phoneNumber',
+          'permanentAddress',
+          'currentAddress',
+          'occupation',
+          'education',
+          'emergencyContactName',
+          'emergencyContactPhone',
+          'createdAt',
+          'updatedAt'
+        ])
+        && (
+          !('phoneNumber' in request.resource.data)
+          || request.resource.data.phoneNumber is string
+        )
+        && (
+          !('permanentAddress' in request.resource.data)
+          || request.resource.data.permanentAddress is string
+        )
+        && (
+          !('currentAddress' in request.resource.data)
+          || request.resource.data.currentAddress is string
+        )
+        && (
+          !('occupation' in request.resource.data)
+          || request.resource.data.occupation is string
+        )
+        && (
+          !('education' in request.resource.data)
+          || request.resource.data.education is string
+        )
+        && (
+          !('emergencyContactName' in request.resource.data)
+          || request.resource.data.emergencyContactName is string
+        )
+        && (
+          !('emergencyContactPhone' in request.resource.data)
+          || request.resource.data.emergencyContactPhone is string
+        )
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+
+      // Profile delete गर्न नपाउने
+      allow delete: if false;
+    }
+        // Password Reset Requests
+    match /password_reset_requests/{requestId} {
+
+      // Admin वा अनुरोध गर्ने सदस्यले मात्र पढ्न पाउने
+      allow read: if signedIn()
+        && (
+          isAdmin()
+          || resource.data.memberUid == request.auth.uid
+        );
+
+      // सदस्यले आफ्नै UID बाट मात्र अनुरोध पठाउन पाउने
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'memberUid',
+          'memberName',
+          'email',
+          'status',
+          'requestedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'memberUid',
+          'memberName',
+          'email',
+          'status',
+          'requestedAt'
+        ])
+        && request.resource.data.memberUid == request.auth.uid
+        && request.resource.data.memberName is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time;
+
+      // Admin ले मात्र अनुरोध स्वीकृत वा अस्वीकृत गर्न पाउने
+      allow update: if isAdmin()
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'reviewedAt',
+            'reviewedByUid',
+            'adminNote'
+          ])
+        && request.resource.data.status in [
+          'approved',
+          'rejected'
+        ]
+        && request.resource.data.reviewedAt == request.time
+        && request.resource.data.reviewedByUid == request.auth.uid;
+
+            allow delete: if false;
+    }
+
+    // बीमा कोषको मौज्दात: Admin मात्र
+    match /insurance_fund_state/{documentId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+  }
+}
