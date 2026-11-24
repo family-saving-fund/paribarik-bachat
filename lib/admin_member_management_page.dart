@@ -78,6 +78,27 @@ class _AdminMemberDetailsPageState extends State<_AdminMemberDetailsPage> {
   late final TextEditingController _citizenship = TextEditingController(text: widget.initialData['citizenshipNumber']?.toString() ?? '');
   final List<Map<String, TextEditingController>> _family = [];
   bool _saving = false;
+  bool _statusBusy = false;
+
+  bool get _hasChanges {
+    final original = widget.initialData;
+    if (_mobile.text.trim() != (original['mobileNumber'] ?? '').toString() ||
+        _dob.text.trim() != (original['dateOfBirth'] ?? '').toString() ||
+        _address.text.trim() != (original['address'] ?? '').toString() ||
+        _occupation.text.trim() != (original['occupation'] ?? '').toString() ||
+        _citizenship.text.trim() != (original['citizenshipNumber'] ?? '').toString()) {
+      return true;
+    }
+    final oldFamily = original['familyMembers'] is List ? original['familyMembers'] as List : const [];
+    if (oldFamily.length != _family.length) return true;
+    for (var i = 0; i < _family.length; i++) {
+      final old = oldFamily[i] is Map ? oldFamily[i] as Map : const {};
+      for (final key in ['name', 'relation', 'dateOfBirth']) {
+        if (_family[i][key]!.text.trim() != (old[key] ?? '').toString()) return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -118,6 +139,22 @@ class _AdminMemberDetailsPageState extends State<_AdminMemberDetailsPage> {
   }));
 
   Future<void> _changeAccountStatus() async {
+    if (_statusBusy) return;
+    setState(() => _statusBusy = true);
+    try {
+      await _changeAccountStatusImpl();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('खाताको अवस्था परिवर्तन गर्न असफल: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _statusBusy = false);
+    }
+  }
+
+  Future<void> _changeAccountStatusImpl() async {
     final current = widget.initialData;
     if (current['accountActive'] == false) {
       final confirm = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -228,9 +265,18 @@ class _AdminMemberDetailsPageState extends State<_AdminMemberDetailsPage> {
             leading: Icon(data['accountActive'] == false ? Icons.block : Icons.verified_user, color: data['accountActive'] == false ? Colors.red : Colors.green),
             title: Text(data['accountActive'] == false ? 'खाता निष्क्रिय छ' : 'खाता सक्रिय छ', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(data['accountActive'] == false ? (data['deactivationMode'] == 'indefinite' ? 'अनिश्चितकालीन निष्क्रियता' : 'निश्चित अवधिको निष्क्रियता') : 'सदस्यको खाता सामान्य अवस्थामा छ'),
-            trailing: FilledButton.tonal(
-              onPressed: _changeAccountStatus,
-              child: Text(data['accountActive'] == false ? 'पुनः सक्रिय' : 'निष्क्रिय गर्नुहोस्'),
+            trailing: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: data['accountActive'] == false ? Colors.green.shade700 : Colors.red.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: _statusBusy ? null : _changeAccountStatus,
+              icon: _statusBusy
+                  ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Icon(data['accountActive'] == false ? Icons.check_circle_outline : Icons.block),
+              label: Text(_statusBusy ? 'प्रक्रियामा...' : (data['accountActive'] == false ? 'पुनः सक्रिय' : 'निष्क्रिय गर्नुहोस्')),
             ),
           ),
         ),
@@ -254,11 +300,19 @@ class _AdminMemberDetailsPageState extends State<_AdminMemberDetailsPage> {
           ])));
         }),
         const SizedBox(height: 16),
-        ElevatedButton.icon(onPressed: _saving ? null : _save, icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save), label: Text(_saving ? 'सुरक्षित हुँदैछ...' : 'परिवर्तन सुरक्षित गर्नुहोस्')),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF173B66),
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.grey.shade400,
+            padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 18),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          onPressed: (_saving || !_hasChanges) ? null : _save, icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save), label: Text(_saving ? 'सुरक्षित हुँदैछ...' : 'परिवर्तन सुरक्षित गर्नुहोस्')),
       ]),
     );
   }
 
-  Widget _field(TextEditingController c, String label, {TextInputType? keyboard}) => TextField(controller: c, keyboardType: keyboard, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()));
+  Widget _field(TextEditingController c, String label, {TextInputType? keyboard}) => TextField(controller: c, keyboardType: keyboard, onChanged: (_) { if (mounted) setState(() {}); }, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()));
   Widget _dateField(TextEditingController c, String label) => InkWell(onTap: () => _pickDate(c), child: InputDecorator(decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), suffixIcon: const Icon(Icons.calendar_month)), child: Text(c.text.isEmpty ? 'पात्रोबाट मिति छान्नुहोस्' : toNepaliDigits(c.text))));
 }

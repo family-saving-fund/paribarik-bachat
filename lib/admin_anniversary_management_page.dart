@@ -175,6 +175,7 @@ class _AdminAnniversaryManagementPageState
     String? selectedPersonDocId;
     String? photoPath = data?['photoPath']?.toString();
     bool uploadingPhoto = false;
+    bool savingEvent = false;
 
     final nameController = TextEditingController(
       text: data?['relatedMemberName']?.toString() ??
@@ -701,9 +702,17 @@ class _AdminAnniversaryManagementPageState
                 onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('रद्द गर्नुहोस्'),
               ),
-              ElevatedButton(
-                onPressed: () async {
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF173B66),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: (uploadingPhoto || savingEvent) ? null : () async {
+                  if (savingEvent || uploadingPhoto) return;
                   if (!formKey.currentState!.validate()) return;
+                  setDialogState(() => savingEvent = true);
 
                     final selectedCoreDocs = coreMemberDocs.where((doc) =>
     (doc.data()['memberUid']?.toString() ?? doc.id) ==
@@ -760,9 +769,16 @@ final selectedCoreMemberName = selectedCoreDocs.isNotEmpty
                         SnackBar(content: Text('सेभ गर्न समस्या भयो: $e')),
                       );
                     }
+                  } finally {
+                    if (dialogContext.mounted) {
+                      setDialogState(() => savingEvent = false);
+                    }
                   }
                 },
-                child: const Text('सेभ गर्नुहोस्'),
+                icon: savingEvent
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.save_outlined),
+                label: Text(savingEvent ? 'सुरक्षित हुँदैछ...' : 'सेभ गर्नुहोस्'),
               ),
             ],
           );

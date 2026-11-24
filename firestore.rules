@@ -283,6 +283,106 @@ match /member/{uid} {
     && request.resource.data.familyMembers is list
     && request.resource.data.profileUpdatedAt == request.time;
 
+
+  // Admin: Deactivation सेट गर्ने
+  allow update: if isAdmin()
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'accountActive', 'deactivationMode', 'deactivationStartsAt',
+      'deactivatedAt', 'deactivationEndsAt', 'deactivationSetBy',
+      'accountStatusUpdatedAt'
+    ])
+    && request.resource.data.accountActive is bool
+    && request.resource.data.deactivationMode in ['fixed', 'indefinite']
+    && request.resource.data.deactivationStartsAt is timestamp
+    && request.resource.data.deactivationSetBy == request.auth.uid
+    && request.resource.data.accountStatusUpdatedAt == request.time
+    && (
+      (request.resource.data.deactivationMode == 'fixed'
+        && request.resource.data.deactivationEndsAt is timestamp
+        && request.resource.data.deactivationEndsAt > request.resource.data.deactivationStartsAt)
+      || (request.resource.data.deactivationMode == 'indefinite'
+        && request.resource.data.deactivationEndsAt == null)
+    )
+    && (
+      (request.resource.data.deactivationStartsAt > request.time
+        && request.resource.data.accountActive == true
+        && request.resource.data.deactivatedAt == null)
+      || (request.resource.data.deactivationStartsAt <= request.time
+        && request.resource.data.accountActive == false
+        && request.resource.data.deactivatedAt == request.time)
+    );
+
+  // Admin: Manual Reactivation
+  allow update: if isAdmin()
+    && resource.data.accountActive == false
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'accountActive', 'deactivationStartsAt', 'deactivationEndsAt',
+      'reactivatedAt', 'penaltyResumeAt', 'penaltyResumeMode',
+      'accountStatusUpdatedAt'
+    ])
+    && request.resource.data.accountActive == true
+    && request.resource.data.deactivationStartsAt == null
+    && request.resource.data.deactivationEndsAt == null
+    && request.resource.data.reactivatedAt == request.time
+    && request.resource.data.penaltyResumeAt is timestamp
+    && request.resource.data.penaltyResumeMode in ['current_month_only', 'fixed_period']
+    && request.resource.data.accountStatusUpdatedAt == request.time;
+
+  // सदस्य: निर्धारित मितिमा Automatic Deactivation
+  allow update: if signedIn()
+    && request.auth.uid == uid
+    && resource.data.accountActive == true
+    && resource.data.deactivationMode == 'fixed'
+    && resource.data.deactivationStartsAt is timestamp
+    && resource.data.deactivationStartsAt <= request.time
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'accountActive', 'deactivatedAt', 'accountStatusUpdatedAt'
+    ])
+    && request.resource.data.accountActive == false
+    && request.resource.data.deactivatedAt == request.time
+    && request.resource.data.accountStatusUpdatedAt == request.time;
+
+  // सदस्य: Fixed अवधि सकिएपछि Automatic Reactivation
+  allow update: if signedIn()
+    && request.auth.uid == uid
+    && resource.data.accountActive == false
+    && resource.data.deactivationMode == 'fixed'
+    && resource.data.deactivationEndsAt is timestamp
+    && resource.data.deactivationEndsAt <= request.time
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'accountActive', 'deactivationStartsAt', 'deactivationEndsAt',
+      'reactivatedAt', 'penaltyResumeAt', 'penaltyResumeMode',
+      'deactivationAutoReactivatedAt'
+    ])
+    && request.resource.data.accountActive == true
+    && request.resource.data.deactivationStartsAt == null
+    && request.resource.data.deactivationEndsAt == null
+    && request.resource.data.reactivatedAt is timestamp
+    && (request.resource.data.reactivatedAt == resource.data.deactivationEndsAt
+        || request.resource.data.reactivatedAt == request.time)
+    && request.resource.data.penaltyResumeAt is timestamp
+    && request.resource.data.penaltyResumeMode == 'fixed_period'
+    && request.resource.data.deactivationAutoReactivatedAt == request.time;
+
+  // Admin: PenaltyService बाट Fixed अवधि सकिएपछि Automatic Reactivation
+  allow update: if isAdmin()
+    && resource.data.accountActive == false
+    && resource.data.deactivationMode == 'fixed'
+    && resource.data.deactivationEndsAt is timestamp
+    && resource.data.deactivationEndsAt <= request.time
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'accountActive', 'deactivationStartsAt', 'deactivationEndsAt',
+      'reactivatedAt', 'penaltyResumeAt', 'penaltyResumeMode',
+      'deactivationAutoReactivatedAt'
+    ])
+    && request.resource.data.accountActive == true
+    && request.resource.data.deactivationStartsAt == null
+    && request.resource.data.deactivationEndsAt == null
+    && request.resource.data.reactivatedAt == resource.data.deactivationEndsAt
+    && request.resource.data.penaltyResumeAt is timestamp
+    && request.resource.data.penaltyResumeMode == 'fixed_period'
+    && request.resource.data.deactivationAutoReactivatedAt == request.time;
+
   // सदस्य विवरण नयाँ बनाउन वा हटाउन नपाउने
   allow create, delete: if false;
 }

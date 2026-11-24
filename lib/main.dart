@@ -411,6 +411,48 @@ Navigator.pushReplacement(
 }
 }
 
+  Future<void> _biometricLogin() async {
+    if (_isLoggingIn) return;
+    setState(() => _isLoggingIn = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _showMessage('पहिले Email र Password बाट Login गर्नुहोस्। त्यसपछि Biometric Login प्रयोग गर्न सक्नुहुन्छ।');
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('biometric_enabled_${user.uid}') != true) {
+        _showMessage('यो खातामा Biometric Login सक्रिय गरिएको छैन।');
+        return;
+      }
+      final auth = LocalAuthentication();
+      if (!await auth.isDeviceSupported() || (await auth.getAvailableBiometrics()).isEmpty) {
+        _showMessage('यस मोबाइलमा Fingerprint वा Face Unlock उपलब्ध छैन।');
+        return;
+      }
+      final authenticated = await auth.authenticate(
+        localizedReason: 'पारिवारिक बचत कोषमा प्रवेश गर्न पहिचान पुष्टि गर्नुहोस्।',
+        options: const AuthenticationOptions(biometricOnly: true, stickyAuth: true),
+      );
+      if (!authenticated) return;
+      final memberDoc = await FirebaseFirestore.instance.collection('member').doc(user.uid).get();
+      if (!memberDoc.exists || !mounted) {
+        _showMessage('सदस्य विवरण भेटिएन।');
+        return;
+      }
+      final data = memberDoc.data() ?? {};
+      final role = data['role']?.toString() ?? 'member';
+      _biometricVerifiedUids.add(user.uid);
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => DashboardPage(
+        memberName: data['name']?.toString() ?? '', role: role, uid: user.uid,
+      )));
+    } catch (e) {
+      if (mounted) _showMessage('Biometric Login हुन सकेन: $e');
+    } finally {
+      if (mounted) setState(() => _isLoggingIn = false);
+    }
+  }
+
 Future<void> _forgotPassword() async {
   final emailController = TextEditingController();
 
@@ -788,6 +830,22 @@ Future<void> _forgotPassword() async {
 
                               const SizedBox(height: 22),
 
+                              // Fingerprint / Face Unlock Login
+                              SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoggingIn ? null : _biometricLogin,
+                                  icon: const Icon(Icons.fingerprint, color: goldLight, size: 27),
+                                  label: const Text('Fingerprint Login', style: TextStyle(color: goldLight, fontWeight: FontWeight.bold)),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: gold, width: 1.2),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
                               // OR divider
                               const Row(
                                 children: [
@@ -995,6 +1053,8 @@ class _GoldTextField extends StatelessWidget {
 
 // DASHBOARD PAGE
 
+final Set<String> _biometricVerifiedUids = {};
+
 class DashboardPage extends StatefulWidget {
   final String memberName;
   final String role;
@@ -1091,6 +1151,7 @@ Future<void> _refreshAccountStatus() async {
 }
 
 Future<void> _verifyBiometricOnOpen() async {
+  if (_biometricVerifiedUids.remove(widget.uid)) return;
   if (_biometricPrompted || widget.role.toLowerCase() == 'admin') return;
   _biometricPrompted = true;
   final prefs = await SharedPreferences.getInstance();
@@ -2766,20 +2827,43 @@ class _MemberProfilePageState extends State<MemberProfilePage> {
   bool _isSavingProfile = false;
   bool _biometricEnabled = false;
   bool _biometricBusy = false;
-    
-  final List<Map<String, TextEditingController>>
-    _familyMemberControllers = [];
-    
-    void _addFamilyMember() {
-  setState(() {
-    _familyMemberControllers.add({
+  bool _profileEditing = false;
+  bool _profileDirty = false;
+  final Set<int> _editingFamilyMembers = {};
+
+  final List<Map<String, TextEditingController>> _familyMemberControllers = [];
+  final List<Map<String, TextEditingController>> _newFamilyMemberControllers = [];
+
+  void _markProfileDirty() {
+    if (!_profileDirty && mounted) setState(() => _profileDirty = true);
+  }
+
+  bool get _hasNewFamilyInput => _newFamilyMemberControllers.any((m) =>
+      m.values.any((c) => c.text.trim().isNotEmpty));
+
+  void _addFamilyMember() {
+    setState(() {
+      _newFamilyMemberControllers.add({
       'name': TextEditingController(),
       'relation': TextEditingController(),
       'dateOfBirth': TextEditingController(),
     });
   });
 }
-    
+
+  @override
+  void dispose() {
+    _mobileController.dispose();
+    _dateOfBirthController.dispose();
+    _addressController.dispose();
+    _occupationController.dispose();
+    _citizenshipController.dispose();
+    for (final member in [..._familyMemberControllers, ..._newFamilyMemberControllers]) {
+      for (final controller in member.values) { controller.dispose(); }
+    }
+    super.dispose();
+  }
+
   Future<void> _saveProfileData({
     required String mobileNumber,
     required String dateOfBirth,
@@ -3003,31 +3087,26 @@ class _MemberProfilePageState extends State<MemberProfilePage> {
               data['occupation']?.toString() ?? '';
           _citizenshipController.text =
               data['citizenshipNumber']?.toString() ?? '';
+          final initialFamilyMembers = data['familyMembers'] as List<dynamic>? ?? [];
+          for (final item in initialFamilyMembers) {
+            final familyData = Map<String, dynamic>.from(item as Map);
+            _familyMemberControllers.add({
+              'name': TextEditingController(text: familyData['name']?.toString() ?? ''),
+              'relation': TextEditingController(text: familyData['relation']?.toString() ?? ''),
+              'dateOfBirth': TextEditingController(text: toNepaliDigits(familyData['dateOfBirth']?.toString() ?? '')),
+            });
+          }
+          final hasExistingProfile = [
+            data['mobileNumber'], data['dateOfBirth'], data['address'],
+            data['occupation'], data['citizenshipNumber'],
+          ].any((value) => value != null && value.toString().trim().isNotEmpty);
+          _profileEditing = !hasExistingProfile;
 
           _profileFieldsLoaded = true;
           SharedPreferences.getInstance().then((prefs) {
             if (mounted) setState(() => _biometricEnabled = prefs.getBool('biometric_enabled_${widget.uid}') ?? false);
           });
         }
-        final savedFamilyMembers =
-    data['familyMembers'] as List<dynamic>? ?? [];
-
-for (final item in savedFamilyMembers) {
-  final familyData = Map<String, dynamic>.from(item as Map);
-
-  _familyMemberControllers.add({
-    'name': TextEditingController(
-      text: familyData['name']?.toString() ?? '',
-    ),
-    'relation': TextEditingController(
-      text: familyData['relation']?.toString() ?? '',
-    ),
-    'dateOfBirth': TextEditingController(
-      text: toNepaliDigits(familyData['dateOfBirth']?.toString() ?? ''),
-    ),
-  });
-}
-
         final name = data['name']?.toString() ?? 'नाम उपलब्ध छैन';
         final role = data['role']?.toString() ?? 'member';
 
@@ -3057,6 +3136,14 @@ for (final item in savedFamilyMembers) {
                 ),
               ),
               const SizedBox(height: 24),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _profileEditing = !_profileEditing),
+                  icon: Icon(_profileEditing ? Icons.lock_outline : Icons.edit),
+                  label: Text(_profileEditing ? 'सम्पादन बन्द गर्नुहोस्' : 'आफ्नो विवरण सम्पादन'),
+                ),
+              ),
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.email_outlined),
@@ -3077,7 +3164,9 @@ for (final item in savedFamilyMembers) {
 
               TextField(
                 controller: _mobileController,
+                enabled: _profileEditing,
                 keyboardType: TextInputType.phone,
+                onChanged: (_) => _markProfileDirty(),
                 decoration: const InputDecoration(
                   labelText: 'मोबाइल नम्बर',
                   border: OutlineInputBorder(),
@@ -3087,6 +3176,7 @@ for (final item in savedFamilyMembers) {
 
               TextField(
   controller: _dateOfBirthController,
+                enabled: _profileEditing,
   readOnly: true,
   decoration: const InputDecoration(
     labelText: 'जन्म मिति (वि.सं.)',
@@ -3094,7 +3184,7 @@ for (final item in savedFamilyMembers) {
     border: OutlineInputBorder(),
     suffixIcon: Icon(Icons.calendar_month),
   ),
-  onTap: () async {
+  onTap: _profileEditing ? () async {
     final pickedDate = await showNepaliDatePicker(
       context: context,
       initialDate: NepaliDateTime.now(),
@@ -3106,14 +3196,17 @@ for (final item in savedFamilyMembers) {
       setState(() {
         _dateOfBirthController.text =
             toNepaliDigits(NepaliDateFormat('yyyy-MM-dd').format(pickedDate));
+        _profileDirty = true;
       });
     }
-  },
+  } : null,
 ),
               const SizedBox(height: 14),
 
               TextField(
                 controller: _addressController,
+                enabled: _profileEditing,
+                onChanged: (_) => _markProfileDirty(),
                 decoration: const InputDecoration(
                   labelText: 'ठेगाना',
                   border: OutlineInputBorder(),
@@ -3123,6 +3216,8 @@ for (final item in savedFamilyMembers) {
 
               TextField(
                 controller: _occupationController,
+                enabled: _profileEditing,
+                onChanged: (_) => _markProfileDirty(),
                 decoration: const InputDecoration(
                   labelText: 'पेशा',
                   border: OutlineInputBorder(),
@@ -3132,6 +3227,8 @@ for (final item in savedFamilyMembers) {
 
               TextField(
                 controller: _citizenshipController,
+                enabled: _profileEditing,
+                onChanged: (_) => _markProfileDirty(),
                 decoration: const InputDecoration(
                   labelText: 'नागरिकता नम्बर',
                   border: OutlineInputBorder(),
@@ -3152,80 +3249,63 @@ const SizedBox(height: 12),
 ..._familyMemberControllers.asMap().entries.map((entry) {
   final index = entry.key;
   final controllers = entry.value;
-
+  final isEditing = _editingFamilyMembers.contains(index);
   return Card(
     margin: const EdgeInsets.only(bottom: 12),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          TextField(
-            controller: controllers['name'],
-            decoration: const InputDecoration(
-              labelText: 'नाम',
-              border: OutlineInputBorder(),
-            ),
+    child: isEditing
+        ? Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(children: [
+              TextField(controller: controllers['name'], decoration: const InputDecoration(labelText: 'नाम', border: OutlineInputBorder()), onChanged: (_) => _markProfileDirty()),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: ['बुवा','आमा','श्रीमान्','श्रीमती','छोरा','छोरी'].contains(controllers['relation']!.text) ? controllers['relation']!.text : null,
+                decoration: const InputDecoration(labelText: 'नाता', border: OutlineInputBorder()),
+                items: ['बुवा','आमा','श्रीमान्','श्रीमती','छोरा','छोरी'].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                onChanged: (value) { controllers['relation']!.text = value ?? ''; _markProfileDirty(); },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: controllers['dateOfBirth'], readOnly: true,
+                decoration: const InputDecoration(labelText: 'जन्म मिति (वि.सं.)', border: OutlineInputBorder(), suffixIcon: Icon(Icons.calendar_month)),
+                onTap: () async {
+                  final picked = await showNepaliDatePicker(context: context, initialDate: NepaliDateTime.now(), firstDate: NepaliDateTime(1970, 2, 5), lastDate: NepaliDateTime.now());
+                  if (picked != null && mounted) { controllers['dateOfBirth']!.text = toNepaliDigits(NepaliDateFormat('yyyy-MM-dd').format(picked)); _markProfileDirty(); }
+                },
+              ),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                TextButton(onPressed: () => setState(() => _editingFamilyMembers.remove(index)), child: const Text('लुकाउनुहोस्')),
+              ]),
+            ]),
+          )
+        : ListTile(
+            title: Text(controllers['name']!.text.trim().isEmpty ? 'नाम नखुलेको सदस्य' : controllers['name']!.text.trim(), style: const TextStyle(fontWeight: FontWeight.bold)),
+            trailing: Wrap(spacing: 4, children: [
+              IconButton(tooltip: 'सम्पादन', icon: const Icon(Icons.edit, color: Color(0xFF245B4A)), onPressed: () => setState(() => _editingFamilyMembers.add(index))),
+              IconButton(tooltip: 'हटाउनुहोस्', icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () async {
+                final confirm = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('सदस्य हटाउने?'), content: const Text('यो परिवार सदस्यको विवरण हटाउन चाहनुहुन्छ?'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('रद्द')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('हटाउनुहोस्'))]));
+                if (confirm == true && mounted) { setState(() { final removed = _familyMemberControllers.removeAt(index); for (final controller in removed.values) { controller.dispose(); } _editingFamilyMembers.clear(); _profileDirty = true; }); }
+              }),
+            ]),
           ),
-          const SizedBox(height: 10),
-DropdownButtonFormField<String>(
-  value: [
-    'बुवा',
-    'आमा',
-    'श्रीमान्',
-    'श्रीमती',
-    'छोरा',
-    'छोरी',
-  ].contains(controllers['relation']!.text)
-      ? controllers['relation']!.text
-      : null,
-  decoration: const InputDecoration(
-    labelText: 'नाता',
-    border: OutlineInputBorder(),
-  ),
-  items: [
-    'बुवा',
-    'आमा',
-    'श्रीमान्',
-    'श्रीमती',
-    'छोरा',
-    'छोरी',
-  ].map((relation) {
-    return DropdownMenuItem<String>(
-      value: relation,
-      child: Text(relation),
-    );
-  }).toList(),
-  onChanged: (value) {
-    controllers['relation']!.text = value ?? '';
-  },
-),
-          const SizedBox(height: 10),
-          TextField(
-            controller: controllers['dateOfBirth'],
-            readOnly: true,
-            decoration: const InputDecoration(
-              labelText: 'जन्म मिति (वि.सं.)',
-              hintText: 'पात्रोबाट मिति छान्नुहोस्',
-              border: OutlineInputBorder(),
-              suffixIcon: Icon(Icons.calendar_month),
-            ),
-            onTap: () async {
-              final pickedDate = await showNepaliDatePicker(
-             context: context,
-             initialDate: NepaliDateTime.now(),
-             firstDate: NepaliDateTime(1970, 2, 5),
-             lastDate: NepaliDateTime.now(),
-              );
+  );
+}).toList(),
 
-              if (pickedDate != null && mounted) {
-                controllers['dateOfBirth']!.text =
-                    toNepaliDigits(NepaliDateFormat('yyyy-MM-dd').format(pickedDate));
-              }
-            },
-          ),
-        ],
-      ),
-    ),
+..._newFamilyMemberControllers.asMap().entries.map((entry) {
+  final c = entry.value;
+  return Card(
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+      TextField(controller: c['name'], decoration: const InputDecoration(labelText: 'नाम', border: OutlineInputBorder()), onChanged: (_) => setState(() {})),
+      const SizedBox(height: 10),
+      DropdownButtonFormField<String>(value: ['बुवा','आमा','श्रीमान्','श्रीमती','छोरा','छोरी'].contains(c['relation']!.text) ? c['relation']!.text : null, decoration: const InputDecoration(labelText: 'नाता', border: OutlineInputBorder()), items: ['बुवा','आमा','श्रीमान्','श्रीमती','छोरा','छोरी'].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(), onChanged: (v) { c['relation']!.text = v ?? ''; setState(() {}); }),
+      const SizedBox(height: 10),
+      TextField(controller: c['dateOfBirth'], readOnly: true, decoration: const InputDecoration(labelText: 'जन्म मिति (वि.सं.)', border: OutlineInputBorder(), suffixIcon: Icon(Icons.calendar_month)), onTap: () async {
+        final picked = await showNepaliDatePicker(context: context, initialDate: NepaliDateTime.now(), firstDate: NepaliDateTime(1970, 2, 5), lastDate: NepaliDateTime.now());
+        if (picked != null && mounted) { c['dateOfBirth']!.text = toNepaliDigits(NepaliDateFormat('yyyy-MM-dd').format(picked)); setState(() {}); }
+      }),
+      Align(alignment: Alignment.centerRight, child: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => setState(() { final removed = _newFamilyMemberControllers.removeAt(entry.key); for (final controller in removed.values) { controller.dispose(); } }))),
+    ])),
   );
 }).toList(),
 
@@ -3243,6 +3323,15 @@ const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
+  style: ElevatedButton.styleFrom(
+    backgroundColor: const Color(0xFF245B4A),
+    foregroundColor: Colors.white,
+    disabledBackgroundColor: Colors.grey.shade400,
+    disabledForegroundColor: Colors.white70,
+    padding: const EdgeInsets.symmetric(vertical: 16),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    elevation: 3,
+  ),
   icon: _isSavingProfile
       ? const SizedBox(
           width: 20,
@@ -3258,15 +3347,22 @@ const SizedBox(height: 24),
         : 'विवरण सुरक्षित गर्नुहोस्',
   ),
                     
-            onPressed: _isSavingProfile
+            onPressed: (_isSavingProfile || (!_profileDirty && !_hasNewFamilyInput))
           ? null
           : () async {
+    if (_isSavingProfile) return;
     setState(() {
       _isSavingProfile = true;
     });
 
     try {
-      final familyMembers = _familyMemberControllers
+      final incompleteFamilyMember = _newFamilyMemberControllers.any((member) =>
+          member.values.any((controller) => controller.text.trim().isNotEmpty) &&
+          member['name']!.text.trim().isEmpty);
+      if (incompleteFamilyMember) {
+        throw Exception('नयाँ परिवार सदस्यको नाम लेख्नुहोस्।');
+      }
+      final familyMembers = [..._familyMemberControllers, ..._newFamilyMemberControllers]
     .map((controllers) => {
           'name': controllers['name']!.text.trim(),
           'relation': controllers['relation']!.text.trim(),
@@ -3287,6 +3383,26 @@ const SizedBox(height: 24),
                       );
 
                       if (!mounted) return;
+                      for (final member in _newFamilyMemberControllers) {
+                        for (final controller in member.values) { controller.dispose(); }
+                      }
+                      setState(() {
+                        for (final member in _familyMemberControllers) {
+                          for (final controller in member.values) { controller.dispose(); }
+                        }
+                        _newFamilyMemberControllers.clear();
+                        _profileDirty = false;
+                        _profileEditing = false;
+                        _editingFamilyMembers.clear();
+                        _familyMemberControllers.clear();
+                        for (final member in familyMembers) {
+                          _familyMemberControllers.add({
+                            'name': TextEditingController(text: member['name']?.toString() ?? ''),
+                            'relation': TextEditingController(text: member['relation']?.toString() ?? ''),
+                            'dateOfBirth': TextEditingController(text: toNepaliDigits(member['dateOfBirth']?.toString() ?? '')),
+                          });
+                        }
+                      });
 
   ScaffoldMessenger.of(context).showSnackBar(
   const SnackBar(
@@ -3311,6 +3427,24 @@ const SizedBox(height: 24),
                 ),
               ),  
             const SizedBox(height: 16),
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFE8EEF8),
+                    child: Icon(Icons.history, color: Color(0xFF173B66)),
+                  ),
+                  title: const Text('कारोबार इतिहास', style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('आफूले गरेका बचत, भुक्तानी, ऋण तथा अन्य कारोबार हेर्नुहोस्'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => MemberTransactionHistoryPage(uid: widget.uid)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
 
               SizedBox(
                 width: double.infinity,
@@ -9347,6 +9481,156 @@ if ((data['paymentVoucherUrl'] ?? '')
                 },
               );
             },
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+class MemberTransactionHistoryPage extends StatefulWidget {
+  final String uid;
+  const MemberTransactionHistoryPage({super.key, required this.uid});
+
+  @override
+  State<MemberTransactionHistoryPage> createState() => _MemberTransactionHistoryPageState();
+}
+
+class _MemberTransactionHistoryPageState extends State<MemberTransactionHistoryPage> {
+  late Future<List<Map<String, dynamic>>> _historyFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _historyFuture = _loadHistory();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadHistory() async {
+    final db = FirebaseFirestore.instance;
+    const collections = [
+      'payments',
+      'monthly_savings',
+      'loans',
+      'loan_installments',
+      'fund_transactions',
+      'late_payment_notices',
+      'penalty_waivers',
+    ];
+    final rows = <Map<String, dynamic>>[];
+    for (final collection in collections) {
+      try {
+        final snapshot = await db.collection(collection)
+            .where('memberUid', isEqualTo: widget.uid).get();
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          if (collection == 'payments' && data['status'] == 'rejected') continue;
+          rows.add({
+            ...data,
+            '_collection': collection,
+            '_docId': doc.id,
+          });
+        }
+      } catch (_) {
+        // Collection-specific access/index errors must not hide other history.
+      }
+    }
+    rows.sort((a, b) => _historyDate(b).compareTo(_historyDate(a)));
+    return rows;
+  }
+
+  DateTime _historyDate(Map<String, dynamic> row) {
+    for (final key in ['createdAt', 'updatedAt', 'paidAt', 'approvedAt', 'reviewedAt', 'date']) {
+      final value = row[key];
+      if (value is Timestamp) return value.toDate();
+      if (value is DateTime) return value;
+    }
+    return DateTime(1970);
+  }
+
+  String _title(Map<String, dynamic> row) {
+    final collection = row['_collection'];
+    if (collection == 'payments') return 'भुक्तानी';
+    if (collection == 'monthly_savings') return 'मासिक बचत / बीमा';
+    if (collection == 'loans') return 'ऋण आवेदन';
+    if (collection == 'loan_installments') return 'ऋण किस्ता';
+    if (collection == 'fund_transactions') return 'कोष कारोबार';
+    if (collection == 'late_payment_notices') return 'ढिलाइ सूचना';
+    if (collection == 'penalty_waivers') return 'जरिमाना छुट';
+    return 'कारोबार';
+  }
+
+  num _amount(Map<String, dynamic> row) {
+    for (final key in ['amount', 'approvedAmount', 'paidAmount', 'savingsPaid', 'requestedAmount', 'waivedAmount']) {
+      final value = row[key];
+      if (value is num && value != 0) return value;
+    }
+    return 0;
+  }
+
+  String _dateLabel(Map<String, dynamic> row) {
+    final bs = row['bsDate']?.toString() ?? row['monthKey']?.toString() ?? '';
+    if (bs.isNotEmpty) return bs;
+    final date = _historyDate(row);
+    return date.year == 1970 ? 'मिति उपलब्ध छैन' :
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F5F9),
+      appBar: AppBar(title: const Text('मेरो कारोबार इतिहास')),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _historyFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('इतिहास लोड गर्न सकिएन: ${snapshot.error}'));
+          }
+          final rows = snapshot.data ?? [];
+          if (rows.isEmpty) {
+            return const Center(child: Text('तपाईंको कारोबार इतिहास भेटिएन।'));
+          }
+          return RefreshIndicator(
+            onRefresh: () async => setState(() => _historyFuture = _loadHistory()),
+            child: ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: rows.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 7),
+              itemBuilder: (context, index) {
+                final row = rows[index];
+                final amount = _amount(row);
+                final status = row['status']?.toString() ?? '';
+                final description = row['description']?.toString()
+                    ?? row['note']?.toString()
+                    ?? row['monthKey']?.toString()
+                    ?? '';
+                return Card(
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFE8EEF8),
+                      child: Icon(Icons.receipt_long, color: Color(0xFF173B66)),
+                    ),
+                    title: Text(_title(row), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text([
+                      _dateLabel(row),
+                      if (description.isNotEmpty) description,
+                      if (status.isNotEmpty) 'अवस्था: $status',
+                    ].join(' • ')),
+                    trailing: amount == 0 ? null : Text(
+                      'रु. ${amount.toString()}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF173B66)),
+                    ),
+                    isThreeLine: description.isNotEmpty,
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
