@@ -24,7 +24,7 @@ class AppUpdateInfo {
 
 class AppUpdateService {
   static const String _githubOwner = 'family-saving-fund';
-  static const String _githubRepository = 'paribarik-bachat-kosh-apk-';
+  static const String _githubRepository = 'paribarik-bachat';
   static const String _latestReleaseApi =
       'https://api.github.com/repos/$_githubOwner/$_githubRepository/releases/latest';
 
