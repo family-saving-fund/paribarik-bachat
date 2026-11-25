@@ -32,10 +32,6 @@ class BankInterestService {
     return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
-  NepaliDateTime _toNepaliDate(DateTime date) {
-    return NepaliDateTime.fromDateTime(date);
-  }
-
   /// नयाँ वार्षिक ब्याजदर सुरक्षित गर्ने; पुरानो दरको इतिहास राख्ने।
   Future<void> saveAnnualRate({
     required double annualRate,
@@ -57,7 +53,7 @@ class BankInterestService {
       'effectiveBsYear': effectiveBsYear,
       'effectiveBsMonth': effectiveBsMonth,
       'effectiveBsDate':
-          '${effectiveBsYear}-${effectiveBsMonth.toString().padLeft(2, '0')}-01',
+          '$effectiveBsYear-${effectiveBsMonth.toString().padLeft(2, '0')}-01',
       'effectiveDate': Timestamp.fromDate(effectiveDate.toDateTime()),
       'createdByUid': createdByUid,
       'createdByName': createdByName,
@@ -97,6 +93,49 @@ class BankInterestService {
 
     if (applicable.isEmpty) return 0.0;
     return _toDouble(applicable.first.data()['annualRate']);
+  }
+
+  /// हालको नेपाली मितिमा लागू ब्याजदर र त्यसको प्रभावकारी मिति ल्याउने।
+  Future<Map<String, dynamic>?> getCurrentAnnualRate() async {
+    final today = DateTime.now().toNepaliDateTime();
+    final snapshot = await _rates
+        .where('effectiveBsYear', isLessThanOrEqualTo: today.year)
+        .orderBy('effectiveBsYear', descending: true)
+        .get();
+
+    final applicable = snapshot.docs.where((doc) {
+      final data = doc.data();
+      final year = (data['effectiveBsYear'] as num?)?.toInt() ?? 0;
+      final month = (data['effectiveBsMonth'] as num?)?.toInt() ?? 0;
+      return year < today.year || (year == today.year && month <= today.month);
+    }).toList();
+
+    applicable.sort((a, b) {
+      final ad = a.data();
+      final bd = b.data();
+      final ay = (ad['effectiveBsYear'] as num).toInt();
+      final am = (ad['effectiveBsMonth'] as num).toInt();
+      final by = (bd['effectiveBsYear'] as num).toInt();
+      final bm = (bd['effectiveBsMonth'] as num).toInt();
+      final comparison = (by * 12 + bm).compareTo(ay * 12 + am);
+      if (comparison != 0) return comparison;
+
+      final ac = ad['createdAt'];
+      final bc = bd['createdAt'];
+      if (ac is Timestamp && bc is Timestamp) {
+        return bc.compareTo(ac);
+      }
+      return b.id.compareTo(a.id);
+    });
+
+    if (applicable.isEmpty) return null;
+    final data = applicable.first.data();
+    return {
+      'annualRate': _toDouble(data['annualRate']),
+      'effectiveBsYear': data['effectiveBsYear'],
+      'effectiveBsMonth': data['effectiveBsMonth'],
+      'effectiveBsDate': data['effectiveBsDate'],
+    };
   }
 
   /// ब्याज गणनाको प्रारम्भिक मौज्दात एकपटक मात्र सुरक्षित गर्ने।
@@ -166,12 +205,71 @@ class BankInterestService {
       throw ArgumentError('ब्याज रकम ऋणात्मक हुन मिल्दैन।');
     }
 
+    // दुवै कोषको ब्याजमा छुट्टाछुट्टै १३% कर कट्टी।
+    const taxRate = 0.13;
+    final generalTax = result.generalInterest * taxRate;
+    final insuranceTax = result.insuranceInterest * taxRate;
+    final generalNetInterest = result.generalInterest - generalTax;
+    final insuranceNetInterest = result.insuranceInterest - insuranceTax;
+
     final periodRef = _periods.doc(periodId);
     final generalRef = _transactions.doc('${periodId}_general');
     final insuranceRef = _transactions.doc('${periodId}_insurance');
     final insuranceSeed = await _insuranceLedger.getSeedBalance();
     final insuranceStateRef = _insuranceLedger.stateRef;
     final configRef = _db.collection('bank_interest_config').doc('current');
+
+    // वितरण अवधिमा लागू भएका ब्याजदरहरूको इतिहास तयार गर्ने।
+    final startParts = startBsDate.split('-');
+    final startPeriod =
+        int.parse(startParts[0]) * 12 + int.parse(startParts[1]);
+    final endPeriod = endYear * 12 + endMonth;
+
+    final rateSnapshot = await _rates.get();
+    final ratesByPeriod = <int, Map<String, dynamic>>{};
+
+    for (final doc in rateSnapshot.docs) {
+      final rate = doc.data();
+      final year = (rate['effectiveBsYear'] as num).toInt();
+      final month = (rate['effectiveBsMonth'] as num).toInt();
+      final key = year * 12 + month;
+
+      if (key > endPeriod) continue;
+
+      final previous = ratesByPeriod[key];
+      final previousCreated = previous?['createdAt'];
+      final currentCreated = rate['createdAt'];
+
+      if (previous == null ||
+          (previousCreated is Timestamp &&
+              currentCreated is Timestamp &&
+              currentCreated.compareTo(previousCreated) > 0)) {
+        ratesByPeriod[key] = {
+          'annualRate': _toDouble(rate['annualRate']),
+          'effectiveBsYear': year,
+          'effectiveBsMonth': month,
+          'effectiveBsDate': rate['effectiveBsDate'],
+        };
+      }
+    }
+
+    final sortedRates = ratesByPeriod.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    Map<String, dynamic>? startingRate;
+    final rateHistory = <Map<String, dynamic>>[];
+
+    for (final entry in sortedRates) {
+      if (entry.key <= startPeriod) {
+        startingRate = entry.value;
+      } else if (entry.key <= endPeriod) {
+        rateHistory.add(entry.value);
+      }
+    }
+
+    if (startingRate != null) {
+      rateHistory.insert(0, startingRate);
+    }
 
     await _db.runTransaction((transaction) async {
       final periodSnapshot = await transaction.get(periodRef);
@@ -191,7 +289,7 @@ class BankInterestService {
           transaction: transaction,
           stateSnapshot: insuranceStateSnapshot,
           seedBalance: insuranceSeed,
-          delta: result.insuranceInterest,
+          delta: insuranceNetInterest,
         );
 
         transaction.set(insuranceRef, {
@@ -199,7 +297,11 @@ class BankInterestService {
           'fundType': 'insurance',
           'incomeCategory': 'bank_interest',
           'isInstitutionIncome': true,
-          'amount': result.insuranceInterest,
+          'amount': insuranceNetInterest,
+          'grossInterest': result.insuranceInterest,
+          'taxRate': taxRate,
+          'taxAmount': insuranceTax,
+          'netInterest': insuranceNetInterest,
           'startBsDate': startBsDate,
           'endBsDate': endBsDate,
           'postedByUid': postedByUid,
@@ -214,7 +316,11 @@ class BankInterestService {
           'fundType': 'general',
           'incomeCategory': 'bank_interest',
           'isInstitutionIncome': true,
-          'amount': result.generalInterest,
+          'amount': generalNetInterest,
+          'grossInterest': result.generalInterest,
+          'taxRate': taxRate,
+          'taxAmount': generalTax,
+          'netInterest': generalNetInterest,
           'startBsDate': startBsDate,
           'endBsDate': endBsDate,
           'postedByUid': postedByUid,
@@ -226,9 +332,9 @@ class BankInterestService {
       transaction.update(configRef, {
         'calculationStartBsDate': endBsDate,
         'generalOpeningBalance':
-            result.generalClosingBalance + result.generalInterest,
+            result.generalClosingBalance + generalNetInterest,
         'insuranceOpeningBalance':
-            result.insuranceClosingBalance + result.insuranceInterest,
+            result.insuranceClosingBalance + insuranceNetInterest,
         'lastPostedPeriodId': periodId,
         'lastPostedAt': FieldValue.serverTimestamp(),
       });
@@ -240,6 +346,14 @@ class BankInterestService {
         'generalInterest': result.generalInterest,
         'insuranceInterest': result.insuranceInterest,
         'totalInterest': result.totalInterest,
+        'generalTax': generalTax,
+        'insuranceTax': insuranceTax,
+        'totalTax': generalTax + insuranceTax,
+        'generalNetInterest': generalNetInterest,
+        'insuranceNetInterest': insuranceNetInterest,
+        'totalNetInterest': generalNetInterest + insuranceNetInterest,
+        'taxRate': taxRate,
+        'rateHistory': rateHistory,
         'totalDays': result.totalDays,
         'status': 'posted',
         'postedByUid': postedByUid,

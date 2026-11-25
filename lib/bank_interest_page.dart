@@ -23,14 +23,17 @@ class _BankInterestPageState extends State<BankInterestPage> {
   bool _initialized = false;
   BankInterestCalculationResult? _result;
   String _message = '';
+  Map<String, dynamic>? _currentRate;
 
   @override
   void initState() {
     super.initState();
+    _rateController.addListener(_onRateChanged);
     final today = DateTime.now().toNepaliDateTime();
     _yearController.text = today.year.toString();
     _monthController.text = today.month.toString();
     _checkConfig();
+    _loadCurrentRate();
   }
 
   Future<void> _checkConfig() async {
@@ -43,10 +46,40 @@ class _BankInterestPageState extends State<BankInterestPage> {
     setState(() => _initialized = doc.exists);
   }
 
+  Future<void> _loadCurrentRate() async {
+    try {
+      final rate = await _service.getCurrentAnnualRate();
+      if (mounted) setState(() => _currentRate = rate);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _message = 'हालको ब्याजदर लोड हुन सकेन: $e');
+      }
+    }
+  }
+
   String get _userUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   String get _userName =>
       FirebaseAuth.instance.currentUser?.displayName ?? 'Admin';
+
+  void _onRateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _canSaveRate {
+    final rate = double.tryParse(_rateController.text.trim());
+    final year = int.tryParse(_yearController.text.trim());
+    final month = int.tryParse(_monthController.text.trim());
+    return !_loading &&
+        rate != null &&
+        rate >= 0 &&
+        rate <= 100 &&
+        year != null &&
+        year > 0 &&
+        month != null &&
+        month >= 1 &&
+        month <= 12;
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     if (_loading) return;
@@ -84,8 +117,10 @@ class _BankInterestPageState extends State<BankInterestPage> {
         createdByUid: _userUid,
         createdByName: _userName,
       );
+      await _loadCurrentRate();
       if (mounted) {
-        setState(() => _message = 'वार्षिक ब्याजदर ${rate}% सुरक्षित भयो।');
+        _rateController.clear();
+        setState(() => _message = 'वार्षिक ब्याजदर $rate% सुरक्षित भयो।');
       }
     });
   }
@@ -108,14 +143,72 @@ class _BankInterestPageState extends State<BankInterestPage> {
   Future<void> _calculate() async {
     await _run(() async {
       final today = DateTime.now().toNepaliDateTime();
-      final result = await _service.calculateInterestThrough(
-        endDate: today,
-      );
+      final result = await _service.calculateInterestThrough(endDate: today);
 
       if (mounted) {
         setState(() {
           _result = result;
           _message = 'ब्याज गणना सफल भयो।';
+        });
+      }
+    });
+  }
+
+  bool get _isDistributionDate {
+    final today = DateTime.now().toNepaliDateTime();
+    return today.day == 1 && [4, 7, 10, 12].contains(today.month);
+  }
+
+  String _bsDate(NepaliDateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _postInterest() async {
+    await _run(() async {
+      final today = DateTime.now().toNepaliDateTime();
+
+      if (today.day != 1 || ![4, 7, 10, 12].contains(today.month)) {
+        throw StateError(
+            'ब्याज साउन १, कात्तिक १, माघ १ वा चैत १ मा मात्र पोस्ट गर्न मिल्छ।');
+      }
+
+      final config = await FirebaseFirestore.instance
+          .collection('bank_interest_config')
+          .doc('current')
+          .get();
+
+      if (!config.exists) {
+        throw StateError('प्रारम्भिक मौज्दातको विवरण भेटिएन।');
+      }
+
+      final parts =
+          (config.data()!['calculationStartBsDate'] as String).split('-');
+      final previousDate = NepaliDateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+      final startDate = previousDate
+          .toDateTime()
+          .add(const Duration(days: 1))
+          .toNepaliDateTime();
+
+      final result = await _service.calculateInterestThrough(endDate: today);
+
+      await _service.postCalculatedInterest(
+        periodId:
+            'bank_interest_${today.year}_${today.month.toString().padLeft(2, '0')}',
+        startBsDate: _bsDate(startDate),
+        endBsDate: _bsDate(today),
+        result: result,
+        postedByUid: _userUid,
+        postedByName: _userName,
+      );
+
+      if (mounted) {
+        setState(() {
+          _result = null;
+          _message = 'ब्याज सफलतापूर्वक पोस्ट भयो। अर्को अवधिको गणना सुरु भयो।';
         });
       }
     });
@@ -129,9 +222,7 @@ class _BankInterestPageState extends State<BankInterestPage> {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -174,9 +265,7 @@ class _BankInterestPageState extends State<BankInterestPage> {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 13,
@@ -191,6 +280,7 @@ class _BankInterestPageState extends State<BankInterestPage> {
 
   @override
   void dispose() {
+    _rateController.removeListener(_onRateChanged);
     _rateController.dispose();
     _yearController.dispose();
     _monthController.dispose();
@@ -214,6 +304,50 @@ class _BankInterestPageState extends State<BankInterestPage> {
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              Card(
+                elevation: 2,
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: Colors.green.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Colors.green.shade50,
+                        child:
+                            Icon(Icons.percent, color: Colors.green.shade800),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'हाल लागू वार्षिक ब्याजदर',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _currentRate == null
+                                  ? 'हाल लागू दर उपलब्ध छैन'
+                                  : '${_currentRate!['annualRate']}%  •  प्रभावकारी मिति: ${_currentRate!['effectiveBsDate'] ?? '${_currentRate!['effectiveBsYear']}-${_currentRate!['effectiveBsMonth']}'}',
+                              style: TextStyle(
+                                color: Colors.green.shade800,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               _section(
                 title: 'वार्षिक ब्याजदर निर्धारण',
                 icon: Icons.percent,
@@ -227,18 +361,10 @@ class _BankInterestPageState extends State<BankInterestPage> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(
-                          child: _field(
-                            'नेपाली वर्ष',
-                            _yearController,
-                          ),
-                        ),
+                        Expanded(child: _field('नेपाली वर्ष', _yearController)),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _field(
-                            'महिना (१–१२)',
-                            _monthController,
-                          ),
+                          child: _field('महिना (१–१२)', _monthController),
                         ),
                       ],
                     ),
@@ -246,7 +372,7 @@ class _BankInterestPageState extends State<BankInterestPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _loading ? null : _saveRate,
+                        onPressed: _canSaveRate ? _saveRate : null,
                         icon: const Icon(Icons.save),
                         label: const Text('ब्याजदर सुरक्षित गर्नुहोस्'),
                         style: ElevatedButton.styleFrom(
@@ -291,7 +417,8 @@ class _BankInterestPageState extends State<BankInterestPage> {
                           onPressed: _loading ? null : _initialize,
                           icon: const Icon(Icons.lock),
                           label: const Text(
-                              'प्रारम्भिक मौज्दात सुरक्षित गर्नुहोस्'),
+                            'प्रारम्भिक मौज्दात सुरक्षित गर्नुहोस्',
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue.shade700,
                             foregroundColor: Colors.white,
@@ -337,20 +464,27 @@ class _BankInterestPageState extends State<BankInterestPage> {
                   child: Column(
                     children: [
                       _resultRow(
-                        'सामान्य कोषको ब्याज',
-                        _result!.generalInterest,
-                      ),
-                      const Divider(height: 22),
+                          'सामान्य कोषको कुल ब्याज', _result!.generalInterest),
+                      _resultRow('सामान्य कोषको १३% कर',
+                          _result!.generalInterest * 0.13),
+                      _resultRow('सामान्य कोषमा खुद जम्मा',
+                          _result!.generalInterest * 0.87,
+                          bold: true),
+                      const Divider(height: 18),
                       _resultRow(
-                        'बीमा कोषको ब्याज',
-                        _result!.insuranceInterest,
-                      ),
+                          'बीमा कोषको कुल ब्याज', _result!.insuranceInterest),
+                      _resultRow('बीमा कोषको १३% कर',
+                          _result!.insuranceInterest * 0.13),
+                      _resultRow('बीमा कोषमा खुद जम्मा',
+                          _result!.insuranceInterest * 0.87,
+                          bold: true),
                       const Divider(height: 22),
-                      _resultRow(
-                        'कुल ब्याज',
-                        _result!.totalInterest,
-                        bold: true,
-                      ),
+                      _resultRow('कुल ब्याज', _result!.totalInterest,
+                          bold: true),
+                      _resultRow('कुल १३% कर', _result!.totalInterest * 0.13),
+                      _resultRow('दुवै कोषमा जम्मा हुने खुद ब्याज',
+                          _result!.totalInterest * 0.87,
+                          bold: true),
                       const SizedBox(height: 12),
                       _infoRow('गणना भएका दिन', '${_result!.totalDays} दिन'),
                       _infoRow(
@@ -362,13 +496,28 @@ class _BankInterestPageState extends State<BankInterestPage> {
                         _money(_result!.insuranceClosingBalance),
                       ),
                       const SizedBox(height: 12),
-                      const Text(
-                        'यो गणना पूर्वावलोकन हो। पोस्टिङ सुविधा अवधिको हिसाब दोहोरिन नदिने सुरक्षा लागू भएपछि सक्रिय गरिनेछ।',
-                        style: TextStyle(
-                          color: Colors.deepOrange,
-                          fontSize: 12,
+                      if (_isDistributionDate) ...[
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _loading ? null : _postInterest,
+                            icon: const Icon(Icons.account_balance),
+                            label: const Text(
+                                'कर कट्टी गरी ब्याज पोस्ट गर्नुहोस्'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade800,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                          ),
                         ),
-                      ),
+                      ] else
+                        const Text(
+                          'यो पूर्वावलोकन मात्र हो। पोस्टिङ साउन १, कात्तिक १, माघ १ वा चैत १ मा मात्र उपलब्ध हुन्छ।',
+                          style:
+                              TextStyle(color: Colors.deepOrange, fontSize: 12),
+                        ),
                     ],
                   ),
                 ),
@@ -396,11 +545,7 @@ class _BankInterestPageState extends State<BankInterestPage> {
     );
   }
 
-  Widget _resultRow(
-    String label,
-    double amount, {
-    bool bold = false,
-  }) {
+  Widget _resultRow(String label, double amount, {bool bold = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [

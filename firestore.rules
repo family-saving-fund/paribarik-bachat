@@ -412,7 +412,13 @@ match /member/{uid} {
 
     // जरिमाना सूचना
     match /late_payment_notices/{noticeId} {
-      allow read: if signedIn()
+      allow get: if signedIn()
+        && (
+          isAdmin()
+          || noticeId.matches('^' + request.auth.uid + '_[0-9]{4}-[0-9]{2}$')
+        );
+
+      allow list: if signedIn()
         && (
           isAdmin()
           || resource.data.memberUid == request.auth.uid
@@ -1011,6 +1017,27 @@ match /member/{uid} {
         && request.resource.data.reviewedByUid == request.auth.uid;
 
             allow delete: if false;
+    }
+
+    // बैंक ब्याज: Admin मात्र पढ्न र नयाँ रेकर्ड बनाउन पाउने
+    match /bank_interest_rates/{rateId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /bank_interest_config/{configId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /bank_interest_periods/{periodId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /bank_interest_transactions/{transactionId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // बीमा कोषको मौज्दात: Admin मात्र
