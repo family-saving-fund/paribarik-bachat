@@ -11,8 +11,8 @@ class FundService {
     }
     return 0;
   }
-    
-      double _toDouble(dynamic value) {
+
+  double _toDouble(dynamic value) {
     if (value is num) {
       return value.toDouble();
     }
@@ -29,8 +29,7 @@ class FundService {
     double totalPaid = 0;
 
     // सदस्यहरूको मासिक बीमा जम्मा
-    final savingsSnapshot =
-        await _db.collection('monthly_savings').get();
+    final savingsSnapshot = await _db.collection('monthly_savings').get();
 
     for (final doc in savingsSnapshot.docs) {
       final data = doc.data();
@@ -39,8 +38,7 @@ class FundService {
     }
 
     // बीमा जरिवाना र बीमा कोषमा आएको अन्य रकम
-    final fundSnapshot =
-        await _db.collection('fund_transactions').get();
+    final fundSnapshot = await _db.collection('fund_transactions').get();
 
     for (final doc in fundSnapshot.docs) {
       final data = doc.data();
@@ -72,8 +70,8 @@ class FundService {
 
     return available > 0 ? available : 0;
   }
-    
-      // वितरण भइसकेको कुल खर्च
+
+  // वितरण भइसकेको कुल खर्च
   Future<int> calculateTotalExpenses() async {
     final expenseSnapshot = await _db
         .collection('fund_transactions')
@@ -96,24 +94,20 @@ class FundService {
 
     return totalExpenses;
   }
-    
-      // खर्च घटाउनुअघिको कुल संस्थागत आम्दानी
-  Future<int> calculateTotalIncome() async {
-    final institutionSavings =
-        await calculateInstitutionSavings();
 
-    final totalExpenses =
-        await calculateTotalExpenses();
+  // खर्च घटाउनुअघिको कुल संस्थागत आम्दानी
+  Future<int> calculateTotalIncome() async {
+    final institutionSavings = await calculateInstitutionSavings();
+
+    final totalExpenses = await calculateTotalExpenses();
 
     return institutionSavings + totalExpenses;
   }
-    
 
   // बीमा बाहेक संस्थाको कुल योग्य बचत
   Future<int> calculateInstitutionSavings() async {
     // १. मासिक बचत र बचत जरिवाना
-    final savingsSnapshot =
-        await _db.collection('monthly_savings').get();
+    final savingsSnapshot = await _db.collection('monthly_savings').get();
 
     int memberSavings = 0;
 
@@ -123,64 +117,61 @@ class FundService {
       memberSavings += _toInt(data['savingsPaid']);
 
       // सामान्य बचत जरिवाना
-memberSavings +=
-    _toInt(data['normalSavingsPenaltyPaid']);
+      memberSavings += _toInt(data['normalSavingsPenaltyPaid']);
 
 // विशेष बचत जरिवाना
-memberSavings +=
-    _toInt(data['specialSavingsPenaltyPaid']);
+      memberSavings += _toInt(data['specialSavingsPenaltyPaid']);
 
       // बीमा र बीमा जरिवाना जानाजानी जोडिएको छैन।
     }
 
     // २. fund_transactions बाट Donation को बचत हिस्सा
-final donationSnapshot = await _db
-    .collection('fund_transactions')
-    .where('fundType', isEqualTo: 'savings')
-    .where('category', isEqualTo: 'donation')
-    .get();
+    final donationSnapshot = await _db
+        .collection('fund_transactions')
+        .where('fundType', isEqualTo: 'savings')
+        .where('category', isEqualTo: 'donation')
+        .get();
 
-int donationSavings = 0;
+    int donationSavings = 0;
 
-for (final doc in donationSnapshot.docs) {
-  final data = doc.data();
+    for (final doc in donationSnapshot.docs) {
+      final data = doc.data();
 
-  if (data['isTest'] == true) {
-    continue;
-  }
+      if (data['isTest'] == true) {
+        continue;
+      }
 
-  donationSavings += _toInt(data['amount']);
-}
+      donationSavings += _toInt(data['amount']);
+    }
 
 // ३. Admin ले स्वीकृत गरेका ऋण किस्ताबाट ब्याज मात्र जोड्ने
-final installmentSnapshot = await _db
-    .collection('loan_installments')
-    .where('status', isEqualTo: 'approved')
-    .get();
+    final installmentSnapshot = await _db
+        .collection('loan_installments')
+        .where('status', isEqualTo: 'approved')
+        .get();
 
-int approvedInstallmentSavings = 0;
+    int approvedInstallmentSavings = 0;
 
-for (final doc in installmentSnapshot.docs) {
-  final data = doc.data();
+    for (final doc in installmentSnapshot.docs) {
+      final data = doc.data();
 
-  if (data['isTest'] == true) {
-    continue;
-  }
+      if (data['isTest'] == true) {
+        continue;
+      }
 
-  // साँवा रकम संस्थाको आम्दानी होइन।
-  // स्वीकृत किस्ताको ब्याज मात्र कुल बचतमा जोड्ने।
-  approvedInstallmentSavings +=
-      _toInt(data['interestPaid']);
-}
+      // साँवा रकम संस्थाको आम्दानी होइन।
+      // स्वीकृत किस्ताको ब्याज मात्र कुल बचतमा जोड्ने।
+      approvedInstallmentSavings += _toInt(data['interestPaid']);
+    }
     // Donation fund_transactions बाट लिइएको छ।
 // बचत जरिमाना monthly_savings बाट मात्र लिइएको छ।
 // fund_transactions बाट बचत जरिमाना फेरि जोडिएको छैन,
 // ताकि दोहोरो गणना नहोस्।
 // ४. वास्तविक रूपमा वितरण भएका खर्च घटाउने
-print('MEMBER SAVINGS = $memberSavings');
-print('DONATION SAVINGS = $donationSavings');
-      
-      final expenseSnapshot = await _db
+    print('MEMBER SAVINGS = $memberSavings');
+    print('DONATION SAVINGS = $donationSavings');
+
+    final expenseSnapshot = await _db
         .collection('fund_transactions')
         .where('fundType', isEqualTo: 'expense')
         .where('category', isEqualTo: 'expense_withdrawal')
@@ -188,7 +179,7 @@ print('DONATION SAVINGS = $donationSavings');
         .get();
 
     int totalExpenses = 0;
-      print('EXPENSE RECORD COUNT = ${expenseSnapshot.docs.length}');
+    print('EXPENSE RECORD COUNT = ${expenseSnapshot.docs.length}');
 
     for (final doc in expenseSnapshot.docs) {
       final data = doc.data();
@@ -199,8 +190,23 @@ print('DONATION SAVINGS = $donationSavings');
 
       totalExpenses += _toInt(data['amount']);
     }
-      
-        return memberSavings +
+
+    final bankInterestSnapshot = await _db
+        .collection('bank_interest_transactions')
+        .where('fundType', isEqualTo: 'general')
+        .where('incomeCategory', isEqualTo: 'bank_interest')
+        .get();
+
+    final bankInterestSavings = bankInterestSnapshot.docs.fold<double>(
+      0.0,
+      (sum, doc) {
+        final amount = doc.data()['amount'];
+        return sum + (amount is num ? amount.toDouble() : 0.0);
+      },
+    );
+
+    return memberSavings +
+        bankInterestSavings.round() +
         donationSavings +
         approvedInstallmentSavings -
         totalExpenses;
@@ -218,8 +224,7 @@ print('DONATION SAVINGS = $donationSavings');
     for (final doc in snapshot.docs) {
       final data = doc.data();
 
-      final remaining =
-          data['outstandingPrincipal'] ??
+      final remaining = data['outstandingPrincipal'] ??
           data['remainingPrincipal'] ??
           data['disbursedAmount'] ??
           data['approvedAmount'] ??
@@ -233,11 +238,9 @@ print('DONATION SAVINGS = $donationSavings');
 
   // संस्थाको उपलब्ध बचत
   Future<int> calculateAvailableSavings() async {
-    final totalSavings =
-        await calculateInstitutionSavings();
+    final totalSavings = await calculateInstitutionSavings();
 
-    final outstandingLoans =
-        await calculateOutstandingLoans();
+    final outstandingLoans = await calculateOutstandingLoans();
 
     final available = totalSavings - outstandingLoans;
 
@@ -248,30 +251,25 @@ print('DONATION SAVINGS = $donationSavings');
   Future<int> calculatePendingLoanRequests({
     String? excludeLoanId,
   }) async {
-    final snapshot = await _db
-    .collection('loans')
-    .where(
+    final snapshot = await _db.collection('loans').where(
       'status',
       whereIn: [
         'voting',
         'admin_review',
         'admin_pending',
       ],
-    )
-    .get();
+    ).get();
 
     int pendingAmount = 0;
 
     for (final doc in snapshot.docs) {
-      if (excludeLoanId != null &&
-          doc.id == excludeLoanId) {
+      if (excludeLoanId != null && doc.id == excludeLoanId) {
         continue;
       }
 
       final data = doc.data();
 
-      pendingAmount +=
-          _toInt(data['requestedAmount']);
+      pendingAmount += _toInt(data['requestedAmount']);
     }
 
     return pendingAmount;
@@ -284,33 +282,26 @@ print('DONATION SAVINGS = $donationSavings');
   Future<int> calculateLoanEligibleAmount({
     String? excludeLoanId,
   }) async {
-    final availableSavings =
-        await calculateAvailableSavings();
+    final availableSavings = await calculateAvailableSavings();
 
-    final afterEmergencyFund =
-        availableSavings - 20000;
+    final afterEmergencyFund = availableSavings - 20000;
 
     if (afterEmergencyFund <= 0) {
       return 0;
     }
 
-    final baseEligible =
-        (afterEmergencyFund * 70) ~/ 100;
+    final baseEligible = (afterEmergencyFund * 70) ~/ 100;
 
-    final pendingRequests =
-        await calculatePendingLoanRequests(
+    final pendingRequests = await calculatePendingLoanRequests(
       excludeLoanId: excludeLoanId,
     );
 
-    final eligibleAmount =
-        baseEligible - pendingRequests;
+    final eligibleAmount = baseEligible - pendingRequests;
 
     if (eligibleAmount <= 0) {
       return 0;
     }
 
-    return eligibleAmount > 500000
-        ? 500000
-        : eligibleAmount;
+    return eligibleAmount > 500000 ? 500000 : eligibleAmount;
   }
 }

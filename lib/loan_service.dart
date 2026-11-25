@@ -22,37 +22,34 @@ class LoanService {
 
   CollectionReference<Map<String, dynamic>> get _memberStatus =>
       _db.collection('loan_member_status');
-      CollectionReference<Map<String, dynamic>> get _installments =>
+  CollectionReference<Map<String, dynamic>> get _installments =>
       _db.collection('loan_installments');
 
   final FundService _fundService = FundService();
-    
+
   final FinancialLedgerService _ledgerService = FinancialLedgerService();
-final AdminAuditService _auditService = AdminAuditService();
-    
-      // --------------------------------------------------
+  final AdminAuditService _auditService = AdminAuditService();
+
+  // --------------------------------------------------
   // Admin भूमिका जाँच
   // --------------------------------------------------
   Future<void> _ensureAdmin() async {
     final user = FirebaseAuth.instance.currentUser;
-print('CURRENT LOGIN EMAIL: ${user?.email}');
+    print('CURRENT LOGIN EMAIL: ${user?.email}');
     if (user == null || user.email == null) {
       throw Exception('पहिले Admin खाताबाट Login गर्नुहोस्।');
     }
 
-    final memberSnapshot =
-    await _members.doc(user.uid).get();
+    final memberSnapshot = await _members.doc(user.uid).get();
 
     if (!memberSnapshot.exists ||
-    (memberSnapshot.data()?['role'] ?? '')
-            .toString()
-            .toLowerCase() !=
-        'admin') {
+        (memberSnapshot.data()?['role'] ?? '').toString().toLowerCase() !=
+            'admin') {
       throw Exception('यो कार्य Admin ले मात्र गर्न सक्नुहुन्छ।');
     }
   }
 
-      // रकमअनुसार नयाँ ऋणको समयमै तिर्दाको मासिक ब्याजदर।
+  // रकमअनुसार नयाँ ऋणको समयमै तिर्दाको मासिक ब्याजदर।
   static double monthlyRateForAmount(num amount) {
     if (amount <= 20000) return 1.5;
     if (amount <= 50000) return 1.25;
@@ -93,7 +90,6 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
     num? originalLoanAmount,
     bool useAmountBasedRules = false,
   }) {
-  
     final start = DateTime(
       lastInterestDate.year,
       lastInterestDate.month,
@@ -124,29 +120,32 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
       };
     }
 
-    for (
-      DateTime day = start.add(const Duration(days: 1));
-      !day.isAfter(end);
-      day = day.add(const Duration(days: 1))
-    ) {
+    for (DateTime day = start.add(const Duration(days: 1));
+        !day.isAfter(end);
+        day = day.add(const Duration(days: 1))) {
       double monthlyRate;
 
       if (!day.isAfter(expiry)) {
         monthlyRate = baseMonthlyRate ??
-            (useAmountBasedRules ? monthlyRateForAmount(originalLoanAmount ?? principal) : 1.0);
+            (useAmountBasedRules
+                ? monthlyRateForAmount(originalLoanAmount ?? principal)
+                : 1.0);
       } else {
         overdueDays = day.difference(expiry).inDays;
         monthlyRate = useAmountBasedRules
             ? overdueRateForAmount(originalLoanAmount ?? principal, overdueDays)
-            : (overdueDays <= 30 ? 1.5 : overdueDays <= 60 ? 2.0 : 3.0);
+            : (overdueDays <= 30
+                ? 1.5
+                : overdueDays <= 60
+                    ? 2.0
+                    : 3.0);
 
         if (overdueDays > 150) {
           actionRequired = true;
         }
       }
 
-      totalInterest +=
-          principal * (monthlyRate / 100) / 30;
+      totalInterest += principal * (monthlyRate / 100) / 30;
     }
 
     if (end.isAfter(expiry)) {
@@ -162,7 +161,7 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
       'actionRequired': actionRequired,
     };
   }
-    
+
   // --------------------------------------------------
   // ऋण आवेदन पेस गर्ने
   // --------------------------------------------------
@@ -194,8 +193,7 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
     }
 
     // ऋण योग्य रकम जाँच
-    final eligibleAmount =
-        await _fundService.calculateLoanEligibleAmount();
+    final eligibleAmount = await _fundService.calculateLoanEligibleAmount();
 
     if (requestedAmount > eligibleAmount) {
       throw Exception(
@@ -233,8 +231,7 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
       if (statusSnapshot.exists) {
         final statusData = statusSnapshot.data()!;
 
-        final activeApplicationId =
-            statusData['activeApplicationId'];
+        final activeApplicationId = statusData['activeApplicationId'];
 
         if (activeApplicationId != null &&
             activeApplicationId.toString().isNotEmpty) {
@@ -247,10 +244,8 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
 
         if (cooldownValue is Timestamp &&
             cooldownValue.toDate().isAfter(DateTime.now())) {
-          final remaining = cooldownValue
-              .toDate()
-              .difference(DateTime.now())
-              .inDays;
+          final remaining =
+              cooldownValue.toDate().difference(DateTime.now()).inDays;
 
           throw Exception(
             'असहमति आएपछि लाग्ने १५ दिने रोक अझै बाँकी छ। '
@@ -260,8 +255,8 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
       }
 
       final voters = voterUids.map((uid) {
-        final memberDoc = memberSnapshot.docs
-            .firstWhere((doc) => doc.id == uid);
+        final memberDoc =
+            memberSnapshot.docs.firstWhere((doc) => doc.id == uid);
 
         return {
           'uid': uid,
@@ -280,17 +275,17 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
         'adDate': adDate,
         'durationMonths': durationMonths,
         'monthlyInterestRate': monthlyRateForAmount(requestedAmount),
-      'status': 'voting',
-'votingRound': 1,
-'votingStartedAt': FieldValue.serverTimestamp(),
-'votingDeadline': Timestamp.fromDate(
-  DateTime.now().add(const Duration(hours: 24)),
-),
-'round1StartedAt': FieldValue.serverTimestamp(),
-'round1Deadline': Timestamp.fromDate(
-  DateTime.now().add(const Duration(hours: 24)),
-),
-'submittedAt': FieldValue.serverTimestamp(),
+        'status': 'voting',
+        'votingRound': 1,
+        'votingStartedAt': FieldValue.serverTimestamp(),
+        'votingDeadline': Timestamp.fromDate(
+          DateTime.now().add(const Duration(hours: 24)),
+        ),
+        'round1StartedAt': FieldValue.serverTimestamp(),
+        'round1Deadline': Timestamp.fromDate(
+          DateTime.now().add(const Duration(hours: 24)),
+        ),
+        'submittedAt': FieldValue.serverTimestamp(),
         'reviewedAt': null,
         'reviewedBy': null,
         'approvedAmount': 0,
@@ -312,12 +307,15 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
         'voters': voters,
       });
 
-      transaction.set(statusRef, {
-        'memberUid': memberUid,
-        'activeApplicationId': loanRef.id,
-        'cooldownUntil': null,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      transaction.set(
+          statusRef,
+          {
+            'memberUid': memberUid,
+            'activeApplicationId': loanRef.id,
+            'cooldownUntil': null,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
     });
 
     return loanRef.id;
@@ -329,182 +327,174 @@ print('CURRENT LOGIN EMAIL: ${user?.email}');
   // --------------------------------------------------
   // सदस्यले ऋणको किस्ता भुक्तानी पेस गर्ने
   // --------------------------------------------------
-  
-Future<void> submitLoanInstallment({
-  required String loanId,
-  required String memberUid,
-  required int amount,
-  required String paymentBsDate,
-  required List<int> receiptImageBytes,
-}) async {
-  final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-  if (currentUid == null || currentUid != memberUid) {
-    throw Exception('आफ्नो खाताबाट मात्र किस्ता पेस गर्न सकिन्छ।');
-  }
-  await MemberAccountGuard.ensureActive(memberUid);
+  Future<void> submitLoanInstallment({
+    required String loanId,
+    required String memberUid,
+    required int amount,
+    required String paymentBsDate,
+    required List<int> receiptImageBytes,
+  }) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-  if (amount <= 0) {
-    throw Exception('किस्ता रकम सही राख्नुहोस्।');
-  }
+    if (currentUid == null || currentUid != memberUid) {
+      throw Exception('आफ्नो खाताबाट मात्र किस्ता पेस गर्न सकिन्छ।');
+    }
+    await MemberAccountGuard.ensureActive(memberUid);
 
-  if (paymentBsDate.trim().isEmpty) {
-    throw Exception('भुक्तानी मिति आवश्यक छ।');
-  }
+    if (amount <= 0) {
+      throw Exception('किस्ता रकम सही राख्नुहोस्।');
+    }
 
-  if (receiptImageBytes.isEmpty) {
-    throw Exception('रसिद फोटो भेटिएन।');
-  }
+    if (paymentBsDate.trim().isEmpty) {
+      throw Exception('भुक्तानी मिति आवश्यक छ।');
+    }
 
-  // Firestore मा फोटोको आकार ५०० KB भन्दा बढी हुन नदिने
-  if (receiptImageBytes.length > 500 * 1024) {
-    throw Exception(
-      'रसिद फोटोको आकार ५०० KB भन्दा बढी छ। '
-      'सानो फोटो छानेर पुनः प्रयास गर्नुहोस्।',
-    );
-  }
+    if (receiptImageBytes.isEmpty) {
+      throw Exception('रसिद फोटो भेटिएन।');
+    }
 
-  final loanRef = _loans.doc(loanId);
-  final loanSnapshot = await loanRef.get();
+    // Firestore मा फोटोको आकार ५०० KB भन्दा बढी हुन नदिने
+    if (receiptImageBytes.length > 500 * 1024) {
+      throw Exception(
+        'रसिद फोटोको आकार ५०० KB भन्दा बढी छ। '
+        'सानो फोटो छानेर पुनः प्रयास गर्नुहोस्।',
+      );
+    }
 
-  if (!loanSnapshot.exists) {
-    throw Exception('ऋण विवरण भेटिएन।');
-  }
-
-  final loanData = loanSnapshot.data()!;
-
-  if (loanData['memberUid'] != memberUid ||
-      loanData['status'] != 'active') {
-    throw Exception('यो सक्रिय ऋण तपाईंको खातामा छैन।');
-  }
-
-  // फोटोका Bytes लाई Base64 मा परिवर्तन गर्ने
-  final receiptBase64 = base64Encode(receiptImageBytes);
-
-  await _installments.add({
-    'loanId': loanId,
-    'memberUid': memberUid,
-    'memberName': loanData['memberName'] ?? '',
-    'amount': amount,
-    'paymentBsDate': paymentBsDate,
-    'receiptBase64': receiptBase64,
-    'receiptSizeBytes': receiptImageBytes.length,
-    'status': 'pending',
-    'submittedAt': FieldValue.serverTimestamp(),
-  });
-}
-
-    
-Future<void> castVote({
-  required String loanId,
-  required String voterUid,
-  required bool agree,
-}) async {
-  final currentUid = FirebaseAuth.instance.currentUser?.uid;
-
-  if (currentUid == null || currentUid != voterUid) {
-    throw Exception('आफ्नो खाताबाट मात्र मतदान गर्न सकिन्छ।');
-  }
-  await MemberAccountGuard.ensureActive(voterUid);
-
-  await _db.runTransaction((transaction) async {
     final loanRef = _loans.doc(loanId);
-    final loanSnapshot = await transaction.get(loanRef);
+    final loanSnapshot = await loanRef.get();
 
     if (!loanSnapshot.exists) {
-      throw Exception('ऋण आवेदन भेटिएन।');
+      throw Exception('ऋण विवरण भेटिएन।');
     }
 
-    final loan = loanSnapshot.data()!;
+    final loanData = loanSnapshot.data()!;
 
-    if (loan['status'] != 'voting') {
-      throw Exception('यस आवेदनको मतदान खुला छैन।');
+    if (loanData['memberUid'] != memberUid || loanData['status'] != 'active') {
+      throw Exception('यो सक्रिय ऋण तपाईंको खातामा छैन।');
     }
 
-    final round = (loan['votingRound'] ?? 1) as int;
+    // फोटोका Bytes लाई Base64 मा परिवर्तन गर्ने
+    final receiptBase64 = base64Encode(receiptImageBytes);
 
-    if (round != 1 && round != 2) {
-      throw Exception('मतदान चरण सही छैन।');
-    }
-
-    final deadline = loan['votingDeadline'];
-
-    if (deadline is! Timestamp ||
-        !deadline.toDate().isAfter(DateTime.now())) {
-      throw Exception('मतदानको समयसीमा सकिएको छ।');
-    }
-
-    final voterUids =
-        List<String>.from(loan['voterUids'] ?? []);
-
-    if (!voterUids.contains(currentUid) ||
-        currentUid == loan['memberUid']) {
-      throw Exception('तपाईं मान्य मतदानकर्ता हुनुहुन्न।');
-    }
-
-    final voters = (loan['voters'] as List<dynamic>? ?? [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-
-    final voterIndex =
-        voters.indexWhere((voter) => voter['uid'] == currentUid);
-
-    if (voterIndex == -1) {
-      throw Exception('मतदानकर्ता सूचीमा तपाईंको नाम भेटिएन।');
-    }
-
-    if (voters[voterIndex]['vote'] != 'pending') {
-      throw Exception('तपाईंले यस चरणमा पहिले नै मतदान गरिसक्नुभयो।');
-    }
-
-    final voteRef = _votes.doc(
-      '${loanId}_round${round}_$currentUid',
-    );
-
-    final voteSnapshot = await transaction.get(voteRef);
-
-    if (voteSnapshot.exists) {
-      throw Exception('तपाईंले यस चरणमा पहिले नै मतदान गरिसक्नुभयो।');
-    }
-
-    final voteValue = agree ? 'agree' : 'disagree';
-
-    voters[voterIndex]['vote'] = voteValue;
-
-    final yesVotes =
-        voters.where((voter) => voter['vote'] == 'agree').length;
-
-    final noVotes =
-        voters.where((voter) => voter['vote'] == 'disagree').length;
-
-    transaction.set(voteRef, {
+    await _installments.add({
       'loanId': loanId,
-      'voterUid': currentUid,
-      'round': round,
-      'vote': voteValue,
-      'source': 'member',
-      'createdAt': FieldValue.serverTimestamp(),
+      'memberUid': memberUid,
+      'memberName': loanData['memberName'] ?? '',
+      'amount': amount,
+      'paymentBsDate': paymentBsDate,
+      'receiptBase64': receiptBase64,
+      'receiptSizeBytes': receiptImageBytes.length,
+      'status': 'pending',
+      'submittedAt': FieldValue.serverTimestamp(),
     });
+  }
 
-    transaction.update(loanRef, {
-      'voters': voters,
-      'yesVotes': yesVotes,
-      'noVotes': noVotes,
+  Future<void> castVote({
+    required String loanId,
+    required String voterUid,
+    required bool agree,
+  }) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (currentUid == null || currentUid != voterUid) {
+      throw Exception('आफ्नो खाताबाट मात्र मतदान गर्न सकिन्छ।');
+    }
+    await MemberAccountGuard.ensureActive(voterUid);
+
+    await _db.runTransaction((transaction) async {
+      final loanRef = _loans.doc(loanId);
+      final loanSnapshot = await transaction.get(loanRef);
+
+      if (!loanSnapshot.exists) {
+        throw Exception('ऋण आवेदन भेटिएन।');
+      }
+
+      final loan = loanSnapshot.data()!;
+
+      if (loan['status'] != 'voting') {
+        throw Exception('यस आवेदनको मतदान खुला छैन।');
+      }
+
+      final round = (loan['votingRound'] ?? 1) as int;
+
+      if (round != 1 && round != 2) {
+        throw Exception('मतदान चरण सही छैन।');
+      }
+
+      final deadline = loan['votingDeadline'];
+
+      if (deadline is! Timestamp ||
+          !deadline.toDate().isAfter(DateTime.now())) {
+        throw Exception('मतदानको समयसीमा सकिएको छ।');
+      }
+
+      final voterUids = List<String>.from(loan['voterUids'] ?? []);
+
+      if (!voterUids.contains(currentUid) || currentUid == loan['memberUid']) {
+        throw Exception('तपाईं मान्य मतदानकर्ता हुनुहुन्न।');
+      }
+
+      final voters = (loan['voters'] as List<dynamic>? ?? [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+
+      final voterIndex =
+          voters.indexWhere((voter) => voter['uid'] == currentUid);
+
+      if (voterIndex == -1) {
+        throw Exception('मतदानकर्ता सूचीमा तपाईंको नाम भेटिएन।');
+      }
+
+      if (voters[voterIndex]['vote'] != 'pending') {
+        throw Exception('तपाईंले यस चरणमा पहिले नै मतदान गरिसक्नुभयो।');
+      }
+
+      final voteRef = _votes.doc(
+        '${loanId}_round${round}_$currentUid',
+      );
+
+      final voteSnapshot = await transaction.get(voteRef);
+
+      if (voteSnapshot.exists) {
+        throw Exception('तपाईंले यस चरणमा पहिले नै मतदान गरिसक्नुभयो।');
+      }
+
+      final voteValue = agree ? 'agree' : 'disagree';
+
+      voters[voterIndex]['vote'] = voteValue;
+
+      final yesVotes = voters.where((voter) => voter['vote'] == 'agree').length;
+
+      final noVotes =
+          voters.where((voter) => voter['vote'] == 'disagree').length;
+
+      transaction.set(voteRef, {
+        'loanId': loanId,
+        'voterUid': currentUid,
+        'round': round,
+        'vote': voteValue,
+        'source': 'member',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      transaction.update(loanRef, {
+        'voters': voters,
+        'yesVotes': yesVotes,
+        'noVotes': noVotes,
+      });
     });
-  });
-}
-    
-    // --------------------------------------------------
+  }
+
+  // --------------------------------------------------
 // Admin ले स्वीकृतिका लागि पर्खिरहेका किस्ता हेर्ने
 // --------------------------------------------------
-Stream<QuerySnapshot<Map<String, dynamic>>>
-    watchPendingInstallments() {
-  return _installments
-      .where('status', isEqualTo: 'pending')
-      .snapshots();
-}
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchPendingInstallments() {
+    return _installments.where('status', isEqualTo: 'pending').snapshots();
+  }
 
-   // --------------------------------------------------
+  // --------------------------------------------------
   // किस्ता भुक्तानी अस्वीकृत गर्ने
   // --------------------------------------------------
   Future<void> rejectLoanInstallment({
@@ -534,14 +524,14 @@ Stream<QuerySnapshot<Map<String, dynamic>>>
       });
     });
   }
-    
+
   // --------------------------------------------------
   // Admin ले ऋण किस्ता स्वीकृत गर्ने
   // --------------------------------------------------
   Future<void> approveLoanInstallment({
-  required String installmentId,
-  double? adjustedAmount,
-}) async {
+    required String installmentId,
+    double? adjustedAmount,
+  }) async {
     await _ensureAdmin();
 
     final adminUid = FirebaseAuth.instance.currentUser!.uid;
@@ -549,8 +539,7 @@ Stream<QuerySnapshot<Map<String, dynamic>>>
 
     await _db.runTransaction((transaction) async {
       // किस्ता विवरण पढ्ने
-      final installmentSnapshot =
-          await transaction.get(installmentRef);
+      final installmentSnapshot = await transaction.get(installmentRef);
 
       if (!installmentSnapshot.exists) {
         throw Exception('किस्ता भुक्तानी विवरण भेटिएन।');
@@ -563,14 +552,13 @@ Stream<QuerySnapshot<Map<String, dynamic>>>
       }
 
       final loanId = installmentData['loanId']?.toString() ?? '';
- final amount = (adjustedAmount ??
-    (installmentData['amount'] as num)).toDouble();
+      final amount =
+          (adjustedAmount ?? (installmentData['amount'] as num)).toDouble();
 
-if (amount <= 0) {
-  throw Exception('स्वीकृत रकम शून्यभन्दा बढी हुनुपर्छ।');
-}
-      final paymentBsDate =
-          installmentData['paymentBsDate']?.toString() ?? '';
+      if (amount <= 0) {
+        throw Exception('स्वीकृत रकम शून्यभन्दा बढी हुनुपर्छ।');
+      }
+      final paymentBsDate = installmentData['paymentBsDate']?.toString() ?? '';
 
       if (loanId.isEmpty || amount <= 0) {
         throw Exception('किस्ता विवरण सही छैन।');
@@ -579,13 +567,12 @@ if (amount <= 0) {
       // ऋण विवरण पढ्ने
       final loanRef = _loans.doc(loanId);
       final loanSnapshot = await transaction.get(loanRef);
-        
-      final adminSnapshot = await transaction.get(
-  _db.collection('member').doc(adminUid),
-);
 
-final adminName =
-    adminSnapshot.data()?['name']?.toString() ?? adminUid;
+      final adminSnapshot = await transaction.get(
+        _db.collection('member').doc(adminUid),
+      );
+
+      final adminName = adminSnapshot.data()?['name']?.toString() ?? adminUid;
 
       if (!loanSnapshot.exists) {
         throw Exception('सम्बन्धित ऋण विवरण भेटिएन।');
@@ -625,12 +612,10 @@ final adminName =
       }
 
       // बाँकी साँवा
-      final principal = (
-        loanData['outstandingPrincipal'] ??
-        loanData['disbursedAmount'] ??
-        loanData['approvedAmount'] ??
-        0
-      ) as num;
+      final principal = (loanData['outstandingPrincipal'] ??
+          loanData['disbursedAmount'] ??
+          loanData['approvedAmount'] ??
+          0) as num;
 
       final outstandingPrincipal = principal.toDouble();
 
@@ -639,22 +624,18 @@ final adminName =
       }
 
       // ऋण सुरु भएको मिति
-      final startValue =
-          loanData['disbursedAt'] ?? loanData['loanStartAt'];
+      final startValue = loanData['disbursedAt'] ?? loanData['loanStartAt'];
 
       if (startValue is! Timestamp) {
         throw Exception('ऋण सुरु भएको मिति भेटिएन।');
       }
 
-      final startBs =
-          NepaliDateTime.fromDateTime(startValue.toDate());
+      final startBs = NepaliDateTime.fromDateTime(startValue.toDate());
 
       // ऋण समाप्त हुने वि.सं. मिति
-      final duration = (
-        loanData['approvedDurationMonths'] ??
-        loanData['durationMonths'] ??
-        1
-      ) as num;
+      final duration = (loanData['approvedDurationMonths'] ??
+          loanData['durationMonths'] ??
+          1) as num;
 
       final durationMonths = duration.toInt();
 
@@ -662,11 +643,9 @@ final adminName =
       final targetYear = startBs.year + monthIndex ~/ 12;
       final targetMonth = monthIndex % 12 + 1;
 
-      final lastDay =
-          NepaliDateTime(targetYear, targetMonth).totalDays;
+      final lastDay = NepaliDateTime(targetYear, targetMonth).totalDays;
 
-      final targetDay =
-          startBs.day > lastDay ? lastDay : startBs.day;
+      final targetDay = startBs.day > lastDay ? lastDay : startBs.day;
 
       final expiryBs = NepaliDateTime(
         targetYear,
@@ -697,23 +676,22 @@ final adminName =
         expiryDate: expiryDate,
         calculationDate: paymentDate,
         baseMonthlyRate: (loanData['monthlyInterestRate'] as num?)?.toDouble(),
-        originalLoanAmount: (loanData['approvedAmount'] ?? loanData['requestedAmount'] ?? outstandingPrincipal) as num,
+        originalLoanAmount: (loanData['approvedAmount'] ??
+            loanData['requestedAmount'] ??
+            outstandingPrincipal) as num,
         useAmountBasedRules: loanData['monthlyInterestRate'] != null,
       );
 
-      final newInterest =
-    (interestResult['interest'] as num).toDouble();
+      final newInterest = (interestResult['interest'] as num).toDouble();
 
       // पहिलेको बाँकी ब्याज + नयाँ ब्याज
       final previousUnpaidInterest =
-    ((loanData['unpaidInterest'] ?? 0) as num).toDouble();
+          ((loanData['unpaidInterest'] ?? 0) as num).toDouble();
 
-      final totalInterestDue =
-          previousUnpaidInterest + newInterest;
+      final totalInterestDue = previousUnpaidInterest + newInterest;
 
       // कुल साँवा र ब्याजभन्दा बढी रकम स्वीकृत गर्न नदिने
-      final totalDue =
-    outstandingPrincipal.toDouble() + totalInterestDue;
+      final totalDue = outstandingPrincipal.toDouble() + totalInterestDue;
 
       if (amount > totalDue) {
         throw Exception(
@@ -726,79 +704,75 @@ final adminName =
       final interestPaid =
           amount >= totalInterestDue ? totalInterestDue : amount;
 
-      final remainingInterest =
-          totalInterestDue - interestPaid;
+      final remainingInterest = totalInterestDue - interestPaid;
 
       // ब्याज तिरेपछि बाँकी रकमबाट साँवा घटाउने
       final principalPaid = amount - interestPaid;
 
-      final newPrincipal =
-          outstandingPrincipal - principalPaid;
-        
-        final ledgerEvent = {
-  'eventId': 'loan_installment_approved_$installmentId',
-  'memberUid': installmentData['memberUid'],
-  'memberName': installmentData['memberName'] ?? '',
-  'transactionType': 'loan_repayment',
-  'amount': amount,
-  'bsDate': paymentBsDate,
-  'description': 'ऋण किस्ता स्वीकृत',
-  'sourceCollection': 'loan_installments',
-  'sourceDocumentId': installmentId,
-  'recordedByUid': adminUid,
-  'recordedByName': adminName,
-  'status': 'approved',
-  'metadata': {
-    'loanId': loanId,
-    'interestPaid': interestPaid,
-    'principalPaid': principalPaid,
-    'unpaidInterestAfterPayment': remainingInterest,
-  },
-};
+      final newPrincipal = outstandingPrincipal - principalPaid;
 
-final ledgerRefs =
-    await _ledgerService.prepareManyInTransaction(
-  transaction: transaction,
-  events: [ledgerEvent],
-);
+      final ledgerEvent = {
+        'eventId': 'loan_installment_approved_$installmentId',
+        'memberUid': installmentData['memberUid'],
+        'memberName': installmentData['memberName'] ?? '',
+        'transactionType': 'loan_repayment',
+        'amount': amount,
+        'bsDate': paymentBsDate,
+        'description': 'ऋण किस्ता स्वीकृत',
+        'sourceCollection': 'loan_installments',
+        'sourceDocumentId': installmentId,
+        'recordedByUid': adminUid,
+        'recordedByName': adminName,
+        'status': 'approved',
+        'metadata': {
+          'loanId': loanId,
+          'interestPaid': interestPaid,
+          'principalPaid': principalPaid,
+          'unpaidInterestAfterPayment': remainingInterest,
+        },
+      };
 
-final auditRef =
-    await _auditService.prepareRecordInTransaction(
-  transaction: transaction,
-  eventId: 'loan_installment_approved_$installmentId',
-);
+      final ledgerRefs = await _ledgerService.prepareManyInTransaction(
+        transaction: transaction,
+        events: [ledgerEvent],
+      );
 
-_ledgerService.writePreparedManyInTransaction(
-  transaction: transaction,
-  refs: ledgerRefs,
-  events: [ledgerEvent],
-);
+      final auditRef = await _auditService.prepareRecordInTransaction(
+        transaction: transaction,
+        eventId: 'loan_installment_approved_$installmentId',
+      );
 
-_auditService.writePreparedRecordInTransaction(
-  transaction: transaction,
-  auditRef: auditRef,
-  data: {
-    'adminUid': adminUid,
-    'adminName': adminName,
-    'action': 'loan_installment_approved',
-    'targetCollection': 'loan_installments',
-    'targetDocumentId': installmentId,
-    'description': 'ऋण किस्ता स्वीकृत',
-    'memberUid': installmentData['memberUid'],
-    'memberName': installmentData['memberName'] ?? '',
-    'amount': amount,
-    'oldValues': {
-      'status': 'pending',
-    },
-    'newValues': {
-      'status': 'approved',
-      'approvedAmount': amount,
-      'interestPaid': interestPaid,
-      'principalPaid': principalPaid,
-      'loanId': loanId,
-    },
-  },
-);
+      _ledgerService.writePreparedManyInTransaction(
+        transaction: transaction,
+        refs: ledgerRefs,
+        events: [ledgerEvent],
+      );
+
+      _auditService.writePreparedRecordInTransaction(
+        transaction: transaction,
+        auditRef: auditRef,
+        data: {
+          'adminUid': adminUid,
+          'adminName': adminName,
+          'action': 'loan_installment_approved',
+          'targetCollection': 'loan_installments',
+          'targetDocumentId': installmentId,
+          'description': 'ऋण किस्ता स्वीकृत',
+          'memberUid': installmentData['memberUid'],
+          'memberName': installmentData['memberName'] ?? '',
+          'amount': amount,
+          'oldValues': {
+            'status': 'pending',
+          },
+          'newValues': {
+            'status': 'approved',
+            'approvedAmount': amount,
+            'interestPaid': interestPaid,
+            'principalPaid': principalPaid,
+            'loanId': loanId,
+          },
+        },
+      );
 
       // किस्ता विवरण अद्यावधिक
       transaction.update(installmentRef, {
@@ -823,378 +797,369 @@ _auditService.writePreparedRecordInTransaction(
     });
   }
 
-Future<void> startSecondVoting({
-  required String loanId,
-  required String adminUid,
-  required int revisedAmount,
-  required int revisedDurationMonths,
-}) async {
-      await _ensureAdmin();
+  Future<void> startSecondVoting({
+    required String loanId,
+    required String adminUid,
+    required int revisedAmount,
+    required int revisedDurationMonths,
+  }) async {
+    await _ensureAdmin();
 
-  final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-  if (currentUid == null || currentUid != adminUid) {
-    throw Exception('Admin खाताबाट मात्र दोस्रो मतदान सुरु गर्न सकिन्छ।');
-  }
-  if (revisedAmount <= 0) {
-    throw Exception('ऋण रकम शून्यभन्दा बढी हुनुपर्छ।');
-  }
-
-  final maxDuration = maxDurationForAmount(revisedAmount);
-  if (revisedDurationMonths < 1 || revisedDurationMonths > maxDuration) {
-    throw Exception('यो ऋण रकमका लागि अधिकतम अवधि $maxDuration महिना हो।');
-  }
-
-  final loanRef = _loans.doc(loanId);
-
-  await _db.runTransaction((transaction) async {
-    final loanSnapshot = await transaction.get(loanRef);
-
-    if (!loanSnapshot.exists) {
-      throw Exception('ऋण आवेदन भेटिएन।');
+    if (currentUid == null || currentUid != adminUid) {
+      throw Exception('Admin खाताबाट मात्र दोस्रो मतदान सुरु गर्न सकिन्छ।');
+    }
+    if (revisedAmount <= 0) {
+      throw Exception('ऋण रकम शून्यभन्दा बढी हुनुपर्छ।');
     }
 
-    final loanData = loanSnapshot.data()!;
-
-    if (loanData['status'] != 'admin_review') {
-      throw Exception(
-        'यो आवेदन दोस्रो मतदानका लागि तयार छैन।',
-      );
+    final maxDuration = maxDurationForAmount(revisedAmount);
+    if (revisedDurationMonths < 1 || revisedDurationMonths > maxDuration) {
+      throw Exception('यो ऋण रकमका लागि अधिकतम अवधि $maxDuration महिना हो।');
     }
 
-    if ((loanData['votingRound'] ?? 1) != 1) {
-      throw Exception('दोस्रो मतदान पहिले नै सुरु भएको छ।');
-    }
-
-    final voterUids =
-        List<String>.from(loanData['voterUids'] ?? []);
-
-    if (voterUids.length != 5) {
-      throw Exception('पाँच जना मतदानकर्ता आवश्यक छन्।');
-    }
-
-    final oldVoters = List<Map<String, dynamic>>.from(
-      (loanData['voters'] ?? []).map(
-        (item) => Map<String, dynamic>.from(item),
-      ),
-    );
-
-    final newVoters = oldVoters.map((voter) {
-      return {
-        'uid': voter['uid'],
-        'name': voter['name'] ?? '',
-        'vote': 'pending',
-      };
-    }).toList();
-
-    final updateData = <String, dynamic>{
-  'requestedAmount': revisedAmount,
-  'durationMonths': revisedDurationMonths,
-  'monthlyInterestRate': monthlyRateForAmount(revisedAmount),
-  'voters': newVoters,
-  'yesVotes': 0,
-  'noVotes': 0,
-  'votingRound': 2,
-  'status': 'voting',
-  'votingStatus': 'round2_in_progress',
-  'round2StartedAt': FieldValue.serverTimestamp(),
-  'round2Deadline': Timestamp.fromDate(
-    DateTime.now().add(const Duration(hours: 24)),
-  ),
-  'votingDeadline': Timestamp.fromDate(
-    DateTime.now().add(const Duration(hours: 24)),
-  ),
-  'adminModifiedBy': adminUid,
-  'adminModifiedAt': FieldValue.serverTimestamp(),
-  'round1Completed': true,
-};
-
-if (loanData['round1RequestedAmount'] == null) {
-  updateData['round1RequestedAmount'] =
-      loanData['requestedAmount'];
-  updateData['round1DurationMonths'] =
-      loanData['durationMonths'];
-}
-
-transaction.update(loanRef, updateData);
-        });
-}
-
-Future<void> castAdminProxyVote({
-  required String loanId,
-  required String adminUid,
-  required String voterUid,
-  required bool agree,
-}) async {
-  await _ensureAdmin();
-
-  final currentUid = FirebaseAuth.instance.currentUser?.uid;
-
-  if (currentUid == null || currentUid != adminUid) {
-    throw Exception('Admin खाताबाट मात्र Proxy Vote गर्न सकिन्छ।');
-  }
-
-  await _db.runTransaction((transaction) async {
     final loanRef = _loans.doc(loanId);
-    final loanSnapshot = await transaction.get(loanRef);
 
-    if (!loanSnapshot.exists) {
-      throw Exception('ऋण आवेदन भेटिएन।');
-    }
+    await _db.runTransaction((transaction) async {
+      final loanSnapshot = await transaction.get(loanRef);
 
-    final loan = loanSnapshot.data()!;
+      if (!loanSnapshot.exists) {
+        throw Exception('ऋण आवेदन भेटिएन।');
+      }
 
-    if (loan['status'] != 'voting') {
-      throw Exception('यस आवेदनको मतदान खुला छैन।');
-    }
+      final loanData = loanSnapshot.data()!;
 
-    final round = (loan['votingRound'] ?? 1) as int;
+      if (loanData['status'] != 'admin_review') {
+        throw Exception(
+          'यो आवेदन दोस्रो मतदानका लागि तयार छैन।',
+        );
+      }
 
-    if (round != 1 && round != 2) {
-      throw Exception('मतदान चरण सही छैन।');
-    }
+      if ((loanData['votingRound'] ?? 1) != 1) {
+        throw Exception('दोस्रो मतदान पहिले नै सुरु भएको छ।');
+      }
 
-    final deadline = loan['votingDeadline'];
+      final voterUids = List<String>.from(loanData['voterUids'] ?? []);
 
-    if (deadline is! Timestamp ||
-        deadline.toDate().isAfter(DateTime.now())) {
-      throw Exception('२४ घण्टे मतदान समयसीमा सकिएको छैन।');
-    }
+      if (voterUids.length != 5) {
+        throw Exception('पाँच जना मतदानकर्ता आवश्यक छन्।');
+      }
 
-    final voterUids = List<String>.from(loan['voterUids'] ?? []);
+      final oldVoters = List<Map<String, dynamic>>.from(
+        (loanData['voters'] ?? []).map(
+          (item) => Map<String, dynamic>.from(item),
+        ),
+      );
 
-    if (!voterUids.contains(voterUid) ||
-    voterUid == loan['memberUid']) {
-  throw Exception('यो सदस्य मान्य मतदानकर्ता होइन।');
-}
+      final newVoters = oldVoters.map((voter) {
+        return {
+          'uid': voter['uid'],
+          'name': voter['name'] ?? '',
+          'vote': 'pending',
+        };
+      }).toList();
 
-    final voteRef = _votes.doc(
-      '${loanId}_round${round}_$voterUid',
-    );
+      final updateData = <String, dynamic>{
+        'requestedAmount': revisedAmount,
+        'durationMonths': revisedDurationMonths,
+        'monthlyInterestRate': monthlyRateForAmount(revisedAmount),
+        'voters': newVoters,
+        'yesVotes': 0,
+        'noVotes': 0,
+        'votingRound': 2,
+        'status': 'voting',
+        'votingStatus': 'round2_in_progress',
+        'round2StartedAt': FieldValue.serverTimestamp(),
+        'round2Deadline': Timestamp.fromDate(
+          DateTime.now().add(const Duration(hours: 24)),
+        ),
+        'votingDeadline': Timestamp.fromDate(
+          DateTime.now().add(const Duration(hours: 24)),
+        ),
+        'adminModifiedBy': adminUid,
+        'adminModifiedAt': FieldValue.serverTimestamp(),
+        'round1Completed': true,
+      };
 
-    final voteSnapshot = await transaction.get(voteRef);
+      if (loanData['round1RequestedAmount'] == null) {
+        updateData['round1RequestedAmount'] = loanData['requestedAmount'];
+        updateData['round1DurationMonths'] = loanData['durationMonths'];
+      }
 
-    if (voteSnapshot.exists) {
-      throw Exception('यस सदस्यले पहिले नै मतदान गरिसकेको छ।');
-    }
-
-    transaction.set(voteRef, {
-      'loanId': loanId,
-      'voterUid': voterUid,
-      'round': round,
-      'vote': agree ? 'agree' : 'disagree',
-      'source': 'admin',
-      'adminUid': currentUid,
-      'createdAt': FieldValue.serverTimestamp(),
+      transaction.update(loanRef, updateData);
     });
-  });
-}
-    
-    // --------------------------------------------------
+  }
+
+  Future<void> castAdminProxyVote({
+    required String loanId,
+    required String adminUid,
+    required String voterUid,
+    required bool agree,
+  }) async {
+    await _ensureAdmin();
+
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (currentUid == null || currentUid != adminUid) {
+      throw Exception('Admin खाताबाट मात्र Proxy Vote गर्न सकिन्छ।');
+    }
+
+    await _db.runTransaction((transaction) async {
+      final loanRef = _loans.doc(loanId);
+      final loanSnapshot = await transaction.get(loanRef);
+
+      if (!loanSnapshot.exists) {
+        throw Exception('ऋण आवेदन भेटिएन।');
+      }
+
+      final loan = loanSnapshot.data()!;
+
+      if (loan['status'] != 'voting') {
+        throw Exception('यस आवेदनको मतदान खुला छैन।');
+      }
+
+      final round = (loan['votingRound'] ?? 1) as int;
+
+      if (round != 1 && round != 2) {
+        throw Exception('मतदान चरण सही छैन।');
+      }
+
+      final deadline = loan['votingDeadline'];
+
+      if (deadline is! Timestamp || deadline.toDate().isAfter(DateTime.now())) {
+        throw Exception('२४ घण्टे मतदान समयसीमा सकिएको छैन।');
+      }
+
+      final voterUids = List<String>.from(loan['voterUids'] ?? []);
+
+      if (!voterUids.contains(voterUid) || voterUid == loan['memberUid']) {
+        throw Exception('यो सदस्य मान्य मतदानकर्ता होइन।');
+      }
+
+      final voteRef = _votes.doc(
+        '${loanId}_round${round}_$voterUid',
+      );
+
+      final voteSnapshot = await transaction.get(voteRef);
+
+      if (voteSnapshot.exists) {
+        throw Exception('यस सदस्यले पहिले नै मतदान गरिसकेको छ।');
+      }
+
+      transaction.set(voteRef, {
+        'loanId': loanId,
+        'voterUid': voterUid,
+        'round': round,
+        'vote': agree ? 'agree' : 'disagree',
+        'source': 'admin',
+        'adminUid': currentUid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  // --------------------------------------------------
 // Admin ले मतदानको नतिजा गणना गर्ने
 // --------------------------------------------------
 
+  Future<void> processLoanVotes({
+    required String loanId,
+    required String adminUid,
+  }) async {
+    await _ensureAdmin();
 
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-Future<void> processLoanVotes({
-  required String loanId,
-  required String adminUid,
-}) async {
-  await _ensureAdmin();
-
-  final currentUid = FirebaseAuth.instance.currentUser?.uid;
-
-  if (currentUid == null || currentUid != adminUid) {
-    throw Exception('Admin ले मात्र मतगणना गर्न सक्छ।');
-  }
+    if (currentUid == null || currentUid != adminUid) {
+      throw Exception('Admin ले मात्र मतगणना गर्न सक्छ।');
+    }
 
     final loanRef = _loans.doc(loanId);
 
-  await _db.runTransaction((transaction) async {
-    final loanSnapshot = await transaction.get(loanRef);
-      
-    if (!loanSnapshot.exists) {
-      throw Exception('ऋण आवेदन भेटिएन।');
-    }
+    await _db.runTransaction((transaction) async {
+      final loanSnapshot = await transaction.get(loanRef);
 
-    final loan = loanSnapshot.data()!;
+      if (!loanSnapshot.exists) {
+        throw Exception('ऋण आवेदन भेटिएन।');
+      }
 
-    if (loan['status'] != 'voting') {
-      throw Exception('यो आवेदन अहिले मतदानमा छैन।');
-    }
+      final loan = loanSnapshot.data()!;
 
-    final round = (loan['votingRound'] ?? 1) as int;
+      if (loan['status'] != 'voting') {
+        throw Exception('यो आवेदन अहिले मतदानमा छैन।');
+      }
 
-    if (round != 1 && round != 2) {
-      throw Exception('मतदान चरण मिलेन।');
-    }
+      final round = (loan['votingRound'] ?? 1) as int;
 
-    final deadline = loan['votingDeadline'];
+      if (round != 1 && round != 2) {
+        throw Exception('मतदान चरण मिलेन।');
+      }
 
-    final voterUids =
-        List<String>.from(loan['voterUids'] ?? []);
+      final deadline = loan['votingDeadline'];
 
-    if (voterUids.length != 5 ||
-        voterUids.toSet().length != 5) {
-      throw Exception('पाँच जना फरक मतदानकर्ता आवश्यक छन्।');
-    }
+      final voterUids = List<String>.from(loan['voterUids'] ?? []);
 
-    final voteRefs = voterUids.map((uid) {
-      return _votes.doc('${loanId}_round${round}_$uid');
-    }).toList();
+      if (voterUids.length != 5 || voterUids.toSet().length != 5) {
+        throw Exception('पाँच जना फरक मतदानकर्ता आवश्यक छन्।');
+      }
 
-    final voteSnapshots =
-        <DocumentSnapshot<Map<String, dynamic>>>[];
+      final voteRefs = voterUids.map((uid) {
+        return _votes.doc('${loanId}_round${round}_$uid');
+      }).toList();
 
-    for (final ref in voteRefs) {
-      voteSnapshots.add(await transaction.get(ref));
-    }
+      final voteSnapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
 
-    final oldVoters = (loan['voters'] as List? ?? [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+      for (final ref in voteRefs) {
+        voteSnapshots.add(await transaction.get(ref));
+      }
 
-    final voters = <Map<String, dynamic>>[];
-
-    var yesVotes = 0;
-    var noVotes = 0;
-
-    for (var i = 0; i < voterUids.length; i++) {
-      final uid = voterUids[i];
-
-      final matching = oldVoters
-          .where((item) => item['uid'] == uid)
+      final oldVoters = (loan['voters'] as List? ?? [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
           .toList();
 
-      if (matching.length != 1) {
-        throw Exception('मतदानकर्ताको विवरण मिलेन: $uid');
-      }
+      final voters = <Map<String, dynamic>>[];
 
-      final voter = Map<String, dynamic>.from(matching.first);
-      final voteSnapshot = voteSnapshots[i];
+      var yesVotes = 0;
+      var noVotes = 0;
 
-      if (!voteSnapshot.exists) {
-        voter['vote'] = 'pending';
+      for (var i = 0; i < voterUids.length; i++) {
+        final uid = voterUids[i];
+
+        final matching = oldVoters.where((item) => item['uid'] == uid).toList();
+
+        if (matching.length != 1) {
+          throw Exception('मतदानकर्ताको विवरण मिलेन: $uid');
+        }
+
+        final voter = Map<String, dynamic>.from(matching.first);
+        final voteSnapshot = voteSnapshots[i];
+
+        if (!voteSnapshot.exists) {
+          voter['vote'] = 'pending';
+          voters.add(voter);
+          continue;
+        }
+
+        final vote = voteSnapshot.data()!;
+
+        if (vote['loanId'] != loanId ||
+            vote['voterUid'] != uid ||
+            vote['round'] != round ||
+            !['agree', 'disagree'].contains(vote['vote'])) {
+          throw Exception('मतदान रेकर्डमा त्रुटि भेटियो।');
+        }
+
+        if (vote['source'] == 'member') {
+          if (vote['adminUid'] != null) {
+            throw Exception('सदस्यको मत विवरण मिलेन।');
+          }
+
+          final createdAt = vote['createdAt'];
+
+          if (createdAt is! Timestamp ||
+              createdAt.toDate().isAfter(deadline.toDate())) {
+            throw Exception('सदस्यको मत समयसीमापछि आएको छ।');
+          }
+        } else if (vote['source'] == 'admin') {
+          final proxyCreatedAt = vote['createdAt'];
+
+          if (vote['adminUid'] != currentUid ||
+              proxyCreatedAt is! Timestamp ||
+              proxyCreatedAt.toDate().isBefore(deadline.toDate())) {
+            throw Exception('Admin Proxy Vote विवरण वा समय मिलेन।');
+          }
+
+          voter['votedByAdmin'] = true;
+          voter['adminUid'] = currentUid;
+          voter['adminVotedAt'] = proxyCreatedAt;
+        } else {
+          throw Exception('Vote को स्रोत पहिचान भएन।');
+        }
+
+        voter['vote'] = vote['vote'];
+
+        if (vote['vote'] == 'agree') {
+          yesVotes++;
+        } else {
+          noVotes++;
+        }
+
         voters.add(voter);
-        continue;
       }
 
-      final vote = voteSnapshot.data()!;
-
-      if (vote['loanId'] != loanId ||
-          vote['voterUid'] != uid ||
-          vote['round'] != round ||
-          !['agree', 'disagree'].contains(vote['vote'])) {
-        throw Exception('मतदान रेकर्डमा त्रुटि भेटियो।');
+      if (voters.any((voter) => voter['vote'] == 'pending')) {
+        throw Exception(
+          'पाँचै जनाको मत पूरा भएको छैन। पहिले बाँकी Proxy Vote पूरा गर्नुहोस्।',
+        );
       }
 
-      if (vote['source'] == 'member') {
-        if (vote['adminUid'] != null) {
-          throw Exception('सदस्यको मत विवरण मिलेन।');
+      final update = <String, dynamic>{
+        'voters': voters,
+        'yesVotes': yesVotes,
+        'noVotes': noVotes,
+      };
+
+      final applicantUid = loan['memberUid'].toString();
+      final statusRef = _memberStatus.doc(applicantUid);
+
+      if (yesVotes >= 4) {
+        update.addAll({
+          'status': 'admin_pending',
+          'votingStatus': 'completed',
+          'fourthAgreeAt': FieldValue.serverTimestamp(),
+          'adminDeadline': Timestamp.fromDate(
+            DateTime.now().add(const Duration(days: 3)),
+          ),
+          'votingCompletedAt': FieldValue.serverTimestamp(),
+          'completedRound': round,
+        });
+      } else if (noVotes >= 2 && round == 1) {
+        update.addAll({
+          'status': 'admin_review',
+          'votingStatus': 'admin_review',
+          'round1YesVotes': yesVotes,
+          'round1NoVotes': noVotes,
+          'round1Voters': voters,
+          'votingCompletedAt': FieldValue.serverTimestamp(),
+        });
+      } else if (noVotes >= 2 && round == 2) {
+        final submittedAt = loan['submittedAt'];
+
+        if (submittedAt is! Timestamp) {
+          throw Exception('मूल आवेदन मिति भेटिएन।');
         }
 
-        final createdAt = vote['createdAt'];
+        update.addAll({
+          'status': 'rejected',
+          'votingStatus': 'rejected',
+          'round2YesVotes': yesVotes,
+          'round2NoVotes': noVotes,
+          'round2Voters': voters,
+          'rejectedBy': voters
+              .where((v) => v['vote'] == 'disagree')
+              .map((v) => v['uid'])
+              .toList(),
+          'votingCompletedAt': FieldValue.serverTimestamp(),
+          'rejectedAt': FieldValue.serverTimestamp(),
+        });
 
-        if (createdAt is! Timestamp ||
-            createdAt.toDate().isAfter(deadline.toDate())) {
-          throw Exception('सदस्यको मत समयसीमापछि आएको छ।');
-        }
-      } else if (vote['source'] == 'admin') {
-        final proxyCreatedAt = vote['createdAt'];
-
-        if (vote['adminUid'] != currentUid ||
-            proxyCreatedAt is! Timestamp ||
-            proxyCreatedAt.toDate().isBefore(deadline.toDate())) {
-          throw Exception('Admin Proxy Vote विवरण वा समय मिलेन।');
-        }
-
-        voter['votedByAdmin'] = true;
-        voter['adminUid'] = currentUid;
-        voter['adminVotedAt'] = proxyCreatedAt;
-      } else {
-        throw Exception('Vote को स्रोत पहिचान भएन।');
+        transaction.set(
+            statusRef,
+            {
+              'memberUid': applicantUid,
+              'activeApplicationId': null,
+              'cooldownUntil': Timestamp.fromDate(
+                submittedAt.toDate().add(const Duration(days: 15)),
+              ),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true));
       }
 
-      voter['vote'] = vote['vote'];
-
-      if (vote['vote'] == 'agree') {
-        yesVotes++;
-      } else {
-        noVotes++;
-      }
-
-      voters.add(voter);
-    }
-
-    if (voters.any((voter) => voter['vote'] == 'pending')) {
-      throw Exception(
-        'पाँचै जनाको मत पूरा भएको छैन। पहिले बाँकी Proxy Vote पूरा गर्नुहोस्।',
-      );
-    }
-
-    final update = <String, dynamic>{
-      'voters': voters,
-      'yesVotes': yesVotes,
-      'noVotes': noVotes,
-    };
-
-    final applicantUid = loan['memberUid'].toString();
-    final statusRef = _memberStatus.doc(applicantUid);
-
-    if (yesVotes >= 4) {
-      update.addAll({
-        'status': 'admin_pending',
-        'votingStatus': 'completed',
-        'fourthAgreeAt': FieldValue.serverTimestamp(),
-        'adminDeadline': Timestamp.fromDate(
-          DateTime.now().add(const Duration(days: 3)),
-        ),
-        'votingCompletedAt': FieldValue.serverTimestamp(),
-        'completedRound': round,
-      });
-    } else if (noVotes >= 2 && round == 1) {
-      update.addAll({
-        'status': 'admin_review',
-        'votingStatus': 'admin_review',
-        'round1YesVotes': yesVotes,
-        'round1NoVotes': noVotes,
-        'round1Voters': voters,
-        'votingCompletedAt': FieldValue.serverTimestamp(),
-      });
-    } else if (noVotes >= 2 && round == 2) {
-      final submittedAt = loan['submittedAt'];
-
-      if (submittedAt is! Timestamp) {
-        throw Exception('मूल आवेदन मिति भेटिएन।');
-      }
-
-      update.addAll({
-        'status': 'rejected',
-        'votingStatus': 'rejected',
-        'round2YesVotes': yesVotes,
-        'round2NoVotes': noVotes,
-        'round2Voters': voters,
-        'rejectedBy': voters
-            .where((v) => v['vote'] == 'disagree')
-            .map((v) => v['uid'])
-            .toList(),
-        'votingCompletedAt': FieldValue.serverTimestamp(),
-        'rejectedAt': FieldValue.serverTimestamp(),
-      });
-
-      transaction.set(statusRef, {
-        'memberUid': applicantUid,
-        'activeApplicationId': null,
-        'cooldownUntil': Timestamp.fromDate(
-          submittedAt.toDate().add(const Duration(days: 15)),
-        ),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
-
-    transaction.update(loanRef, update);
-  });
-}
+      transaction.update(loanRef, update);
+    });
+  }
 
   // पुरानो main.dart को compatibility का लागि
   Future<void> respondToGuarantor({
@@ -1234,14 +1199,13 @@ Future<void> processLoanVotes({
     }
 
     final deadline = loanData['adminDeadline'];
-    final deadlinePassed = deadline is Timestamp &&
-        DateTime.now().isAfter(deadline.toDate());
+    final deadlinePassed =
+        deadline is Timestamp && DateTime.now().isAfter(deadline.toDate());
 
     // तीन दिन कटेपछि मूल मागअनुसार स्वीकृति
     final amount = deadlinePassed
         ? (loanData['requestedAmount'] as num).toInt()
-        : (approvedAmount ??
-            (loanData['requestedAmount'] as num).toInt());
+        : (approvedAmount ?? (loanData['requestedAmount'] as num).toInt());
 
     final duration = deadlinePassed
         ? (loanData['durationMonths'] as num).toInt()
@@ -1257,10 +1221,9 @@ Future<void> processLoanVotes({
       throw Exception('स्वीकृत रकमका लागि अधिकतम अवधि $maxDuration महिना हो।');
     }
 
-    final eligibleAmount =
-    await _fundService.calculateLoanEligibleAmount(
-  excludeLoanId: loanId,
-);
+    final eligibleAmount = await _fundService.calculateLoanEligibleAmount(
+      excludeLoanId: loanId,
+    );
 
     if (amount > eligibleAmount) {
       throw Exception(
@@ -1271,6 +1234,7 @@ Future<void> processLoanVotes({
 
     final applicantUid = loanData['memberUid'].toString();
     final statusRef = _memberStatus.doc(applicantUid);
+    final disbursedBsDate = DateTime.now().toNepaliDateTime();
 
     await _db.runTransaction((transaction) async {
       final currentLoan = await transaction.get(loanRef);
@@ -1289,6 +1253,8 @@ Future<void> processLoanVotes({
         'disbursedAmount': amount,
         'outstandingPrincipal': amount,
         'disbursedAt': FieldValue.serverTimestamp(),
+        'disbursedBsDate':
+            '${disbursedBsDate.year}-${disbursedBsDate.month.toString().padLeft(2, '0')}-${disbursedBsDate.day.toString().padLeft(2, '0')}',
         'loanStartAt': FieldValue.serverTimestamp(),
         'reviewedAt': FieldValue.serverTimestamp(),
         'reviewedBy': approvedBy,
@@ -1296,11 +1262,14 @@ Future<void> processLoanVotes({
         'autoApproved': deadlinePassed,
       });
 
-      transaction.set(statusRef, {
-        'memberUid': applicantUid,
-        'activeApplicationId': null,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      transaction.set(
+          statusRef,
+          {
+            'memberUid': applicantUid,
+            'activeApplicationId': null,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
     });
   }
 
@@ -1311,16 +1280,14 @@ Future<void> processLoanVotes({
   Future<void> processExpiredAdminApprovals() async {
     final now = Timestamp.now();
 
-    final snapshot = await _loans
-        .where('status', isEqualTo: 'admin_pending')
-        .get();
+    final snapshot =
+        await _loans.where('status', isEqualTo: 'admin_pending').get();
 
     for (final doc in snapshot.docs) {
       final data = doc.data();
       final deadline = data['adminDeadline'];
 
-      if (deadline is Timestamp &&
-          deadline.compareTo(now) <= 0) {
+      if (deadline is Timestamp && deadline.compareTo(now) <= 0) {
         try {
           await approveLoan(
             loanId: doc.id,
@@ -1338,13 +1305,11 @@ Future<void> processLoanVotes({
   // ऋण विवरण हेर्ने Streams
   // --------------------------------------------------
 
-    Stream<QuerySnapshot<Map<String, dynamic>>> watchPendingLoans() {
-    return _loans
-        .where(
-          'status',
-          whereIn: ['voting', 'admin_pending', 'admin_review'],
-        )
-        .snapshots();
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchPendingLoans() {
+    return _loans.where(
+      'status',
+      whereIn: ['voting', 'admin_pending', 'admin_review'],
+    ).snapshots();
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchVotingLoans(
@@ -1361,16 +1326,12 @@ Future<void> processLoanVotes({
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchActiveLoans() {
-    return _loans
-        .where('status', isEqualTo: 'active')
-        .snapshots();
+    return _loans.where('status', isEqualTo: 'active').snapshots();
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchGuarantorResponses(
     String loanId,
   ) {
-    return _votes
-        .where('loanId', isEqualTo: loanId)
-        .snapshots();
+    return _votes.where('loanId', isEqualTo: loanId).snapshots();
   }
 }
