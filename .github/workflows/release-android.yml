@@ -15,6 +15,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Check runner disk space
+        run: |
+          echo "===== DISK SPACE BEFORE BUILD ====="
+          df -h
+          echo "===== LARGEST DIRECTORIES ====="
+          sudo du -xh /usr /opt /home /tmp --max-depth=1 2>/dev/null | sort -h | tail -20
+
       - name: Validate release signing secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
