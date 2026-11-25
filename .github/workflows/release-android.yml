@@ -22,6 +22,16 @@ jobs:
           echo "===== LARGEST DIRECTORIES ====="
           sudo du -xh /usr /opt /home /tmp --max-depth=1 2>/dev/null | sort -h | tail -20
 
+      - name: Free runner disk space
+        run: |
+          echo "===== DISK BEFORE CLEANUP ====="
+          df -h
+          sudo apt-get clean
+          sudo docker system prune -af || true
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/local/.ghcup
+          echo "===== DISK AFTER CLEANUP ====="
+          df -h
+
       - name: Validate release signing secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
