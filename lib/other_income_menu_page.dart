@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'bank_interest_page.dart';
+import 'other_income_entry_page.dart';
 
 class OtherIncomeMenuPage extends StatelessWidget {
   const OtherIncomeMenuPage({super.key});
@@ -44,9 +45,22 @@ class OtherIncomeMenuPage extends StatelessWidget {
               ),
               title: const Text(
                 'अन्य आम्दानी',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF087443),
+                  fontSize: 17,
+                ),
               ),
               subtitle: const Text('आम्दानीका स्रोतहरू व्यवस्थापन गर्नुहोस्'),
+              trailing: const Icon(Icons.chevron_right, color: Color(0xFF087443)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const OtherIncomeEntryPage(),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 12),
@@ -76,7 +90,11 @@ class OtherIncomeMenuPage extends StatelessWidget {
               ),
               title: const Text(
                 'बैंक ब्याज',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFFB85B00),
+                  fontSize: 17,
+                ),
               ),
               subtitle: const Text(
                 'ब्याजदर, दैनिक गणना र आम्दानी पोस्टिङ',

@@ -5,6 +5,7 @@ import 'admin_audit_service.dart';
 import 'notification_service.dart';
 import 'insurance_fund_ledger.dart';
 import 'member_account_guard.dart';
+import 'discipline_points_service.dart';
 
 class PaymentService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -60,6 +61,10 @@ class PaymentService {
 
     if (bsDate.trim().isEmpty || adDate.trim().isEmpty) {
       throw ArgumentError('BS र AD मिति आवश्यक छन्।');
+    }
+    if (paymentType == 'donation' &&
+        DisciplinePointsService.donationMonthKey(bsDate) == null) {
+      throw ArgumentError('दानको BS मिति सही ढाँचामा लेख्नुहोस्। उदाहरण: 2083 साल कार्तिक 15 गते');
     }
 
     if (paymentType != 'donation' && monthKeys.isEmpty) {
@@ -380,8 +385,52 @@ final adminName =
       final insuranceFundStateSnapshot =
           await transaction.get(insuranceFundLedger.stateRef);
 
-      // ३. Donation को स्वीकृति।
+      // ३. Donation को स्वीकृति। दान अंक नेपाली महिनाको १ गतेदेखि
+      // मसान्तसम्मको कुल रकमका आधारमा क्रमिक रूपमा समायोजन हुन्छ।
       if (paymentType == 'donation') {
+        final donationBsDate = payment['bsDate']?.toString() ?? '';
+        final donationMonthKey =
+            DisciplinePointsService.donationMonthKey(donationBsDate);
+        if (donationMonthKey == null) {
+          throw StateError('दानको BS मिति सही ढाँचामा छैन। उदाहरण: 2083 साल कार्तिक 15 गते');
+        }
+
+        final donationMemberRef = _db.collection('member').doc(memberUid);
+        final donationMemberSnapshot = await transaction.get(donationMemberRef);
+        if (!donationMemberSnapshot.exists) {
+          throw StateError('दान गर्ने सदस्यको विवरण भेटिएन।');
+        }
+        final donationSummaryRef = _db
+            .collection('discipline_donation_months')
+            .doc('${memberUid}_$donationMonthKey');
+        final donationSummarySnapshot = await transaction.get(donationSummaryRef);
+        final donationPointHistoryRef =
+            _db.collection('discipline_point_history').doc(paymentId);
+        final donationPointHistorySnapshot =
+            await transaction.get(donationPointHistoryRef);
+        if (donationPointHistorySnapshot.exists) {
+          throw StateError('यो दानको अनुशासन अंक पहिले नै गणना भएको छ।');
+        }
+
+        final previousDonationTotal =
+            (donationSummarySnapshot.data()?['donationTotal'] as num?)?.toInt() ?? 0;
+        final previousAwardedPoints =
+            (donationSummarySnapshot.data()?['pointsAwarded'] as num?)?.toInt() ?? 0;
+        final newDonationTotal = previousDonationTotal + approvedAmount;
+        final targetDonationPoints =
+            DisciplinePointsService.donationTargetPoints(newDonationTotal);
+        final donationPointsDelta = DisciplinePointsService.donationPointDelta(
+          previousTotal: previousDonationTotal,
+          previousPointsAwarded: previousAwardedPoints,
+          newDonationAmount: approvedAmount,
+        );
+        if (donationPointsDelta < 0) {
+          throw StateError('दानको अनुशासन अंकको पुरानो हिसाब मिलेन।');
+        }
+        final oldDonationPoints =
+            (donationMemberSnapshot.data()?['disciplinePoints'] as num?)?.toInt() ?? 0;
+        final newDonationPoints = oldDonationPoints + donationPointsDelta;
+
         final insuranceDonation = approvedAmount ~/ 2;
         final institutionDonation = approvedAmount - insuranceDonation;
 final donationLedgerEvents = [
@@ -403,6 +452,9 @@ final donationLedgerEvents = [
     'metadata': {
       'insuranceAmount': insuranceDonation,
       'institutionSavingsAmount': institutionDonation,
+      'donationMonthKey': donationMonthKey,
+      'disciplinePointsDelta': donationPointsDelta,
+      'disciplinePointsTarget': targetDonationPoints,
     },
   },
 ];
@@ -426,11 +478,44 @@ insuranceFundLedger.applyDelta(
   delta: insuranceDonation.toDouble(),
 );
 
-_ledgerService.writePreparedManyInTransaction(
-  transaction: transaction,
-  refs: donationLedgerRefs,
-  events: donationLedgerEvents,
-);
+        transaction.set(donationSummaryRef, {
+          'memberUid': memberUid,
+          'nepaliMonthKey': donationMonthKey,
+          'donationTotal': newDonationTotal,
+          'pointsAwarded': targetDonationPoints,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'lastPaymentId': paymentId,
+        }, SetOptions(merge: true));
+
+        if (donationPointsDelta != 0) {
+          transaction.update(donationMemberRef, {
+            'disciplinePoints': newDonationPoints,
+            'disciplinePointsUpdatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        transaction.set(donationPointHistoryRef, {
+          'memberUid': memberUid,
+          'memberName': payment['memberName']?.toString() ?? '',
+          'paymentId': paymentId,
+          'paymentType': 'donation',
+          'bsDate': donationBsDate,
+          'nepaliMonthKey': donationMonthKey,
+          'donationAmount': approvedAmount,
+          'monthlyDonationTotal': newDonationTotal,
+          'pointsDelta': donationPointsDelta,
+          'targetPointsAfterDonation': targetDonationPoints,
+          'balanceAfter': newDonationPoints,
+          'reason': newDonationTotal < 100
+              ? 'यो नेपाली महिनाको कुल दान रु. १०० नपुगेकाले अंक लागू भएन'
+              : 'यो नेपाली महिनाको कुल दान रु. $newDonationTotal को १०% अनुशासन अंक समायोजन',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        _ledgerService.writePreparedManyInTransaction(
+          transaction: transaction,
+          refs: donationLedgerRefs,
+          events: donationLedgerEvents,
+        );
 
 _auditService.writePreparedRecordInTransaction(
   transaction: transaction,
@@ -449,6 +534,10 @@ _auditService.writePreparedRecordInTransaction(
     'newValues': {
       'status': 'approved',
       'approvedAmount': approvedAmount,
+      'donationMonthKey': donationMonthKey,
+      'monthlyDonationTotal': newDonationTotal,
+      'disciplinePointsDelta': donationPointsDelta,
+      'disciplinePointsTarget': targetDonationPoints,
     },
   },
 );
@@ -459,6 +548,9 @@ _auditService.writePreparedRecordInTransaction(
           'approvedAmount': approvedAmount,
           'donationInsuranceAmount': insuranceDonation,
           'donationInstitutionAmount': institutionDonation,
+          'donationMonthKey': donationMonthKey,
+          'disciplinePointsDelta': donationPointsDelta,
+          'disciplinePointsReason': 'नेपाली महिनाको कुल दान रु. $newDonationTotal को १०% अंक समायोजन',
           'status': 'approved',
           'reviewedAt': FieldValue.serverTimestamp(),
           'reviewedBy': adminUid,
@@ -540,6 +632,28 @@ _auditService.writePreparedRecordInTransaction(
       for (final monthRef in monthRefs) {
         monthSnapshots.add(await transaction.get(monthRef));
       }
+
+      // अनुशासन अंक र आंशिक भुक्तानी गणना पनि सबै लेखाइअघि पढ्ने।
+      final memberRef = _db.collection('member').doc(memberUid);
+      final memberSnapshot = await transaction.get(memberRef);
+      if (!memberSnapshot.exists) {
+        throw StateError('अनुशासन अंक अद्यावधिक गर्न सदस्य भेटिएन।');
+      }
+      final pointHistoryRef =
+          _db.collection('discipline_point_history').doc(paymentId);
+      final pointHistorySnapshot = await transaction.get(pointHistoryRef);
+      final partialMonthRef = paymentType == 'partial' && monthKeys.length == 1
+          ? _db.collection('discipline_point_months').doc(
+              '${memberUid}_${monthKeys.single}',
+            )
+          : null;
+      final partialMonthSnapshot = partialMonthRef == null
+          ? null
+          : await transaction.get(partialMonthRef);
+      final previousPartialCount =
+          (partialMonthSnapshot?.data()?['partialPaymentCount'] as num?)
+                  ?.toInt() ??
+              0;
 
       var amountLeft = approvedAmount;
       final updates = <Map<String, dynamic>>[];
@@ -774,6 +888,7 @@ _auditService.writePreparedRecordInTransaction(
 
         updates.add({
           'ref': monthRefs[i],
+          'monthKey': monthKeys[i],
           'data': updateData,
         });
       }
@@ -784,8 +899,32 @@ _auditService.writePreparedRecordInTransaction(
           'महिना वा रकम जाँच गर्नुहोस्।',
         );
       }
-        
-        // सबै मासिक Ledger अभिलेख पहिले सुरक्षित गर्ने।
+
+      final processedMonthKeys = updates
+          .map((update) => update['monthKey'].toString())
+          .toList();
+      final fullyPaidMonthKeys = updates
+          .where((update) =>
+              (update['data'] as Map<String, dynamic>)['status'] == 'paid')
+          .map((update) => update['monthKey'].toString())
+          .toList();
+
+      final pointAward = DisciplinePointsService.calculate(
+        paymentType: paymentType,
+        processedMonthKeys: processedMonthKeys,
+        fullyPaidMonthKeys: fullyPaidMonthKeys,
+        bsDate: payment['bsDate']?.toString() ?? '',
+        penaltyDetailsByMonth: penaltyDetailsByMonth,
+        previousPartialCount: previousPartialCount,
+      );
+      if (pointHistorySnapshot.exists) {
+        throw StateError('यो भुक्तानीको अनुशासन अंक पहिले नै गणना भएको छ।');
+      }
+      final oldDisciplinePoints =
+          (memberSnapshot.data()?['disciplinePoints'] as num?)?.toInt() ?? 0;
+      final newDisciplinePoints = oldDisciplinePoints + pointAward.points;
+
+      // सबै मासिक Ledger अभिलेख पहिले सुरक्षित गर्ने।
     
 final monthlyLedgerRefs =
     await _ledgerService.prepareManyInTransaction(
@@ -828,10 +967,45 @@ _auditService.writePreparedRecordInTransaction(
     },
     'metadata': {
       'ledgerEventCount': ledgerEvents.length,
+      'disciplinePointsDelta': pointAward.points,
+      'disciplinePointsReason': pointAward.reason,
     },
   },
 );
 
+      // प्रत्येक स्वीकृत आंशिक भुक्तानीको क्रम सुरक्षित राख्ने।
+      if (partialMonthRef != null) {
+        transaction.set(
+          partialMonthRef,
+          {
+            'memberUid': memberUid,
+            'monthKey': monthKeys.single,
+            'partialPaymentCount': previousPartialCount + 1,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+
+      // एउटै स्वीकृत भुक्तानीबाट एकपटक मात्र अंक थप्ने वा घटाउने।
+      if (pointAward.points != 0) {
+        transaction.update(memberRef, {
+          'disciplinePoints': newDisciplinePoints,
+          'disciplinePointsUpdatedAt': FieldValue.serverTimestamp(),
+        });
+        transaction.set(pointHistoryRef, {
+          'memberUid': memberUid,
+          'memberName': payment['memberName']?.toString() ?? '',
+          'paymentId': paymentId,
+          'paymentType': paymentType,
+          'monthKeys': monthKeys,
+          'bsDate': payment['bsDate']?.toString() ?? '',
+          'pointsDelta': pointAward.points,
+          'balanceAfter': newDisciplinePoints,
+          'reason': pointAward.reason,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       // ७. सबै read र हिसाब पूरा भएपछि मासिक रेकर्ड लेख्ने।
       for (final update in updates) {

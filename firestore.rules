@@ -284,6 +284,15 @@ match /member/{uid} {
     && request.resource.data.profileUpdatedAt == request.time;
 
 
+  // सदस्यले आफ्नै Profile Image URL मात्र अद्यावधिक गर्न पाउने
+  allow update: if signedIn()
+    && request.auth.uid == uid
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'profileImageUrl', 'profileImageUpdatedAt'
+    ])
+    && request.resource.data.profileImageUrl is string
+    && request.resource.data.profileImageUpdatedAt == request.time;
+
   // Admin: Deactivation सेट गर्ने
   allow update: if isAdmin()
     && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -382,6 +391,14 @@ match /member/{uid} {
     && request.resource.data.penaltyResumeAt is timestamp
     && request.resource.data.penaltyResumeMode == 'fixed_period'
     && request.resource.data.deactivationAutoReactivatedAt == request.time;
+
+  // Admin: स्वीकृत भुक्तानीबाट अनुशासन अंकको मौज्दात मात्र अद्यावधिक गर्ने
+  allow update: if isAdmin()
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'disciplinePoints', 'disciplinePointsUpdatedAt'
+    ])
+    && request.resource.data.disciplinePoints is int
+    && request.resource.data.disciplinePointsUpdatedAt == request.time;
 
   // सदस्य विवरण नयाँ बनाउन वा हटाउन नपाउने
   allow create, delete: if false;
@@ -1036,12 +1053,46 @@ match /member/{uid} {
     }
 
     match /bank_interest_transactions/{transactionId} {
-      allow read, create: if isAdmin();
+      // सदस्यहरूले संस्थाको ब्याज आम्दानीको अभिलेख पढ्न पाउने; लेख्ने अधिकार Admin मात्र
+      allow read: if signedIn();
+      allow create: if isAdmin();
       allow update, delete: if false;
     }
 
     // बीमा कोषको मौज्दात: Admin मात्र
     match /insurance_fund_state/{documentId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+
+    // सदस्यगत प्रतिवेदनको सुरक्षित इतिहास: Admin मात्र
+    match /member_report_history/{reportId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // अनुशासन अंकको immutable इतिहास
+    match /discipline_point_history/{entryId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.memberUid == request.auth.uid);
+      allow create: if isAdmin()
+        && request.resource.data.memberUid is string
+        && request.resource.data.pointsDelta is int
+        && request.resource.data.balanceAfter is int
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // प्रत्येक सदस्य र महिनाको आंशिक भुक्तानी गणना
+    match /discipline_point_months/{monthRecordId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // प्रत्येक सदस्य र नेपाली महिनाको दान कुल तथा दिइसकेको अंक
+    // स्वीकृत दानको transaction बाट मात्र Admin ले अद्यावधिक गर्छ।
+    match /discipline_donation_months/{monthRecordId} {
       allow read, create, update: if isAdmin();
       allow delete: if false;
     }

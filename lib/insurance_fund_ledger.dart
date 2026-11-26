@@ -27,6 +27,11 @@ class InsuranceFundLedger {
         .collection('fund_transactions')
         .where('category', isEqualTo: 'insurance_claim_payout')
         .get();
+    final bankInterest = await _db
+        .collection('bank_interest_transactions')
+        .where('fundType', isEqualTo: 'insurance')
+        .where('incomeCategory', isEqualTo: 'bank_interest')
+        .get();
 
     var income = 0.0;
     var expense = 0.0;
@@ -42,6 +47,12 @@ class InsuranceFundLedger {
       final data = doc.data();
       if (data['isTest'] != true && data['status'] == 'disbursed') {
         expense += _number(data['amount']);
+      }
+    }
+    for (final doc in bankInterest.docs) {
+      final data = doc.data();
+      if (data['isTest'] != true && data['isInstitutionIncome'] != false) {
+        income += _number(data['amount']);
       }
     }
     return income - expense;

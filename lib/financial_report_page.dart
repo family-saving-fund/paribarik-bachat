@@ -16,12 +16,14 @@ class FinancialReportPage extends StatefulWidget {
   final String memberUid;
   final String memberName;
   final String role;
+  final String pageTitle;
 
   const FinancialReportPage({
     super.key,
     required this.memberUid,
     required this.memberName,
     required this.role,
+    this.pageTitle = 'रिपोर्ट तथा विवरण',
   });
 
   @override
@@ -35,41 +37,79 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
   String get memberName => widget.memberName;
   String get role => widget.role;
     
-  int? _getBsMonthOrder(String bsDate) {
-  final parts = bsDate.trim().split(RegExp(r'\s+'));
-
-  if (parts.length < 3) return null;
-
-  final year = int.tryParse(parts[0]);
-  if (year == null) return null;
-
-  const monthNames = {
-    'बैशाख': 1,
-    'वैशाख': 1,
-    'जेठ': 2,
-    'असार': 3,
-    'साउन': 4,
-    'श्रावण': 4,
-    'भदौ': 5,
-    'भाद्र': 5,
-    'असोज': 6,
-    'कार्तिक': 7,
-    'मंसिर': 8,
-    'पुष': 9,
-    'पौष': 9,
-    'माघ': 10,
-    'फागुन': 11,
-    'चैत': 12,
-    'चैत्र': 12,
+  static const Map<String, int> _bsMonthNumbers = {
+    'बैशाख': 1, 'वैशाख': 1, 'जेठ': 2, 'असार': 3,
+    'साउन': 4, 'श्रावण': 4, 'भदौ': 5, 'भाद्र': 5,
+    'असोज': 6, 'कार्तिक': 7, 'मंसिर': 8, 'पुष': 9,
+    'पौष': 9, 'माघ': 10, 'फागुन': 11, 'चैत': 12, 'चैत्र': 12,
   };
 
-  final monthIndex = monthNames[parts[2]];
+  String? _monthKeyFromBsDate(String bsDate) {
+    final normalized = toWesternDigits(bsDate).trim();
+    if (normalized.isEmpty) return null;
+    final numeric = RegExp(r'^(20\d{2})[-/](\d{1,2})(?:[-/]\d{1,2})?$')
+        .firstMatch(normalized);
+    if (numeric != null) {
+      final year = int.tryParse(numeric.group(1)!);
+      final month = int.tryParse(numeric.group(2)!);
+      if (year != null && month != null && month >= 1 && month <= 12) {
+        return '$year-${month.toString().padLeft(2, '0')}';
+      }
+    }
 
-  if (monthIndex == null) return null;
+    final yearMatch = RegExp(r'(20\d{2})').firstMatch(normalized);
+    if (yearMatch == null) return null;
+    final year = int.tryParse(yearMatch.group(1)!);
+    if (year == null) return null;
+    int? month;
+    for (final entry in _bsMonthNumbers.entries) {
+      if (normalized.contains(entry.key)) {
+        month = entry.value;
+        break;
+      }
+    }
+    if (month == null) return null;
+    return '$year-${month.toString().padLeft(2, '0')}';
+  }
 
-  return (year * 12) + monthIndex;
-}
-    
+  int? _getBsMonthOrder(String bsDate) {
+    final key = _monthKeyFromBsDate(bsDate);
+    if (key == null) return null;
+    final parts = key.split('-');
+    if (parts.length != 2) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    if (year == null || month == null) return null;
+    return year * 12 + month;
+  }
+
+  String? _recordMonthKey(Map<String, dynamic> data) {
+    if (data['transactionType']?.toString() == 'monthly_payment') {
+      final metadata = data['metadata'] is Map
+          ? Map<String, dynamic>.from(data['metadata'] as Map)
+          : <String, dynamic>{};
+      final contributionMonth = metadata['monthKey']?.toString() ?? '';
+      final normalizedContributionMonth = _monthKeyFromBsDate(contributionMonth);
+      if (normalizedContributionMonth != null) return normalizedContributionMonth;
+    }
+    return _monthKeyFromBsDate(data['bsDate']?.toString() ?? '');
+  }
+
+  String _monthLabel(String key) {
+    const months = [
+      'बैशाख', 'जेठ', 'असार', 'साउन', 'भदौ', 'असोज',
+      'कार्तिक', 'मंसिर', 'पुष', 'माघ', 'फागुन', 'चैत',
+    ];
+    final parts = key.split('-');
+    if (parts.length != 2) return toNepaliDigits(key);
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    if (year == null || month == null || month < 1 || month > 12) {
+      return toNepaliDigits(key);
+    }
+    return '${toNepaliDigits(year.toString())} ${months[month - 1]}';
+  }
+
     // Ledger बाट संस्थाको वास्तविक आम्दानी गणना गर्ने
   double _calculateInstitutionIncome(
     List<Map<String, dynamic>> records,
@@ -98,6 +138,9 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
       } else if (type == 'loan_repayment') {
         totalIncome +=
             metadata['interestPaid'] as num? ?? 0;
+      } else if (type == 'other_income' &&
+          metadata['fundType'] == 'savings') {
+        totalIncome += (data['amount'] as num? ?? 0);
       }
     }
 
@@ -138,6 +181,7 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
 
   for (final doc in savingsSnapshot.docs) {
     final data = doc.data();
+    if (data['isTest'] == true) continue;
 
     final key = data['monthKey']?.toString() ?? '';
     final order = _getBsMonthOrder(key);
@@ -167,12 +211,43 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
 
     if (data['isTest'] == true) continue;
 
-    final order = getOrderFromTimestamp(data['createdAt']);
+    final order = _getBsMonthOrder(data['bsDate']?.toString() ?? '') ??
+        getOrderFromTimestamp(data['createdAt']);
 
     if (!includeMonth(order)) continue;
 
     totalIncome +=
         (data['amount'] as num? ?? 0).toDouble();
+  }
+
+  final otherIncomeSnapshot = await FirebaseFirestore.instance
+      .collection('fund_transactions')
+      .where('fundType', isEqualTo: 'savings')
+      .where('category', isEqualTo: 'other_income')
+      .get();
+
+  for (final doc in otherIncomeSnapshot.docs) {
+    final data = doc.data();
+    if (data['isTest'] == true || data['status'] != 'approved') continue;
+    final order = _getBsMonthOrder(data['bsDate']?.toString() ?? '') ??
+        getOrderFromTimestamp(data['createdAt']);
+    if (!includeMonth(order)) continue;
+    totalIncome += (data['amount'] as num? ?? 0).toDouble();
+  }
+
+  final bankInterestSnapshot = await FirebaseFirestore.instance
+      .collection('bank_interest_transactions')
+      .where('fundType', isEqualTo: 'general')
+      .where('incomeCategory', isEqualTo: 'bank_interest')
+      .get();
+
+  for (final doc in bankInterestSnapshot.docs) {
+    final data = doc.data();
+    if (data['isTest'] == true || data['isInstitutionIncome'] == false) continue;
+    final order = _getBsMonthOrder(data['endBsDate']?.toString() ?? '') ??
+        getOrderFromTimestamp(data['createdAt']);
+    if (!includeMonth(order)) continue;
+    totalIncome += (data['amount'] as num? ?? 0).toDouble();
   }
 
   final installmentSnapshot =
@@ -186,7 +261,10 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
 
     if (data['isTest'] == true) continue;
 
-    final order = getOrderFromTimestamp(data['approvedAt']);
+    final order = _getBsMonthOrder(
+          data['paymentBsDate']?.toString() ?? data['bsDate']?.toString() ?? '',
+        ) ??
+        getOrderFromTimestamp(data['approvedAt']);
 
     if (!includeMonth(order)) continue;
 
@@ -599,11 +677,11 @@ final date = escapeHtml(
   </div>
 
   <div class="subtitle">
-      महिना: ${escapeHtml(_selectedMonth ?? 'सबै महिना')}
+      महिना: ${escapeHtml(_selectedMonth == null ? 'सबै महिना' : _monthLabel(_selectedMonth!))}
     </div>
 
     <div class="subtitle">
-      महिना: ${escapeHtml(_selectedMonth ?? 'सबै महिना')}
+      महिना: ${escapeHtml(_selectedMonth == null ? 'सबै महिना' : _monthLabel(_selectedMonth!))}
     </div>
     
  $financialSummaryHtml
@@ -672,7 +750,7 @@ final date = escapeHtml(
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('रिपोर्ट तथा विवरण'),
+        title: Text(widget.pageTitle),
         backgroundColor: const Color(0xFFFFB02E),
         foregroundColor: const Color(0xFF102A43),
       ),
@@ -723,20 +801,16 @@ final date = escapeHtml(
                 final records = snapshot.data?.docs ?? [];
 
                 final availableMonths = records
-                    .map((doc) =>
-                        doc.data()['bsDate']?.toString() ?? '')
-  .where((date) => date.length >= 7)
- .map((date) => date.split(' ').take(3).join(' '))
+                    .map((doc) => _recordMonthKey(doc.data()))
+                    .whereType<String>()
                     .toSet()
                     .toList()
                   ..sort((a, b) => b.compareTo(a));
 
-   final filteredRecords = _selectedMonth == null
+                final filteredRecords = _selectedMonth == null
                     ? records
                     : records.where((doc) {
-                        final date =
-    doc.data()['bsDate']?.toString() ?? '';
-   return date.startsWith('$_selectedMonth ');
+                        return _recordMonthKey(doc.data()) == _selectedMonth;
                       }).toList();
 
                 return StreamBuilder<
@@ -786,9 +860,8 @@ final expenseRecords = expenseSnapshot.data?.docs ?? [];
       final reportAvailableMonths = <String>{
   ...availableMonths,
   ...normalizedExpenseRecords
-      .map((data) => data['bsDate']?.toString() ?? '')
-      .where((date) => date.length >= 7)
-      .map((date) => date.split(' ').take(3).join(' ')),
+      .map((data) => _monthKeyFromBsDate(data['bsDate']?.toString() ?? ''))
+      .whereType<String>(),
 }.toList()
   ..sort((a, b) => b.compareTo(a));
 
@@ -796,7 +869,7 @@ final filteredExpenseRecords = _selectedMonth == null
     ? normalizedExpenseRecords
     : normalizedExpenseRecords.where((data) {
         final date = data['bsDate']?.toString() ?? '';
-        return date.startsWith('$_selectedMonth ');
+        return _monthKeyFromBsDate(date) == _selectedMonth;
       }).toList();
       
       final monthlyIncome = 0.0;
@@ -817,8 +890,8 @@ final previousMonthRecords = selectedMonthOrder == null
     : records
         .map((doc) => doc.data())
         .where((data) {
-          final date = data['bsDate']?.toString() ?? '';
-          final order = _getBsMonthOrder(date);
+          final monthKey = _recordMonthKey(data);
+          final order = monthKey == null ? null : _getBsMonthOrder(monthKey);
           return order != null && order < selectedMonthOrder;
         })
         .toList();
@@ -873,7 +946,7 @@ reportRecords.sort((a, b) {
            items: reportAvailableMonths.map((month) {
               return DropdownMenuItem<String>(
                               value: month,
-                              child: Text(month),
+                              child: Text(_monthLabel(month)),
                             );
                           }).toList(),
                           onChanged: (value) {
@@ -1008,6 +1081,14 @@ itemBuilder: (context, index) {
                                     data['transactionType']
                                             ?.toString() ??
                                         '';
+                                final String displayType = switch (type) {
+                                  'monthly_payment' => 'मासिक बचत भुक्तानी',
+                                  'donation' => 'चन्दा / दान',
+                                  'loan_repayment' => 'ऋण ब्याज भुक्तानी',
+                                  'other_income' => 'अन्य आम्दानी',
+                                  'खर्च' => 'कोष खर्च',
+                                  _ => type,
+                                };
 
                                 final String name =
                                     data['memberName']?.toString() ??
@@ -1039,9 +1120,9 @@ itemBuilder: (context, index) {
                                       ),
                                     ),
                                     title: Text(
-                                      type.isEmpty
+                                      displayType.isEmpty
                                           ? 'वित्तीय कारोबार'
-                                          : type,
+                                          : displayType,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                       ),

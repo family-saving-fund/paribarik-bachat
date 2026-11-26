@@ -39,6 +39,11 @@ class FundService {
 
     // बीमा जरिवाना र बीमा कोषमा आएको अन्य रकम
     final fundSnapshot = await _db.collection('fund_transactions').get();
+    final bankInterestSnapshot = await _db
+        .collection('bank_interest_transactions')
+        .where('fundType', isEqualTo: 'insurance')
+        .where('incomeCategory', isEqualTo: 'bank_interest')
+        .get();
 
     for (final doc in fundSnapshot.docs) {
       final data = doc.data();
@@ -56,6 +61,13 @@ class FundService {
           data['category'] == 'insurance_claim_payout' &&
           data['status'] == 'disbursed') {
         totalPaid += amount;
+      }
+    }
+
+    for (final doc in bankInterestSnapshot.docs) {
+      final data = doc.data();
+      if (data['isTest'] != true && data['isInstitutionIncome'] != false) {
+        totalIncome += _toDouble(data['amount']);
       }
     }
 
@@ -113,6 +125,7 @@ class FundService {
 
     for (final doc in savingsSnapshot.docs) {
       final data = doc.data();
+      if (data['isTest'] == true) continue;
 
       memberSavings += _toInt(data['savingsPaid']);
 
@@ -144,7 +157,21 @@ class FundService {
       donationSavings += _toInt(data['amount']);
     }
 
-// ३. Admin ले स्वीकृत गरेका ऋण किस्ताबाट ब्याज मात्र जोड्ने
+    // ३. Admin बाट प्रविष्ट गरिएको अन्य आम्दानी (बचत कोष)
+    final otherIncomeSnapshot = await _db
+        .collection('fund_transactions')
+        .where('fundType', isEqualTo: 'savings')
+        .where('category', isEqualTo: 'other_income')
+        .get();
+
+    int otherIncomeSavings = 0;
+    for (final doc in otherIncomeSnapshot.docs) {
+      final data = doc.data();
+      if (data['isTest'] == true || data['status'] != 'approved') continue;
+      otherIncomeSavings += _toInt(data['amount']);
+    }
+
+// ४. Admin ले स्वीकृत गरेका ऋण किस्ताबाट ब्याज मात्र जोड्ने
     final installmentSnapshot = await _db
         .collection('loan_installments')
         .where('status', isEqualTo: 'approved')
@@ -200,7 +227,11 @@ class FundService {
     final bankInterestSavings = bankInterestSnapshot.docs.fold<double>(
       0.0,
       (sum, doc) {
-        final amount = doc.data()['amount'];
+        final data = doc.data();
+        if (data['isTest'] == true || data['isInstitutionIncome'] == false) {
+          return sum;
+        }
+        final amount = data['amount'];
         return sum + (amount is num ? amount.toDouble() : 0.0);
       },
     );
@@ -208,6 +239,7 @@ class FundService {
     return memberSavings +
         bankInterestSavings.round() +
         donationSavings +
+        otherIncomeSavings +
         approvedInstallmentSavings -
         totalExpenses;
   }

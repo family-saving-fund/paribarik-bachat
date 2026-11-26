@@ -464,6 +464,21 @@ class BankInterestService {
           );
           break;
 
+        case 'other_income': {
+          final isInsurance = metadata['fundType'] == 'insurance';
+          addEvent(
+            rawDate: item['bsDate'],
+            fundType: isInsurance
+                ? BankInterestFundType.insurance
+                : BankInterestFundType.general,
+            delta: _toDouble(item['amount']),
+            description: isInsurance
+                ? 'बीमा कोषको अन्य आम्दानी'
+                : 'बचत कोषको अन्य आम्दानी',
+          );
+          break;
+        }
+
         case 'loan_repayment':
           addEvent(
             rawDate: item['bsDate'],

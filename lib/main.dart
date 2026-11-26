@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'other_income_menu_page.dart';
+import 'admin_financial_pages.dart';
+import 'annual_financial_report_page.dart';
+import 'monthly_financial_report_page.dart';
+import 'contribution_history_page.dart';
 import 'bank_payment_details_page.dart';
 import 'insurance_management_page.dart';
 import 'admin_insurance_management_page.dart';
@@ -1486,80 +1490,89 @@ class _DeactivatedMemberDashboard extends StatelessWidget {
     final index = DashboardContent.names.indexWhere(
         (name) => name.replaceAll(RegExp(r'\s+'), '') == normalized);
     final safe = index < 0 ? 0 : index;
-    return ListView(padding: const EdgeInsets.all(16), children: [
-      _DashboardAtmCard(
-        name: memberName.isEmpty ? DashboardContent.names[safe] : memberName,
-        photo: DashboardContent.photos[safe],
-        background: DashboardContent.backgrounds[safe],
-        savings: 'XXX',
-        loan: 'XXX',
-        large: true,
-        redacted: true,
-      ),
-      const SizedBox(height: 12),
-      const Card(
-          child: Padding(
-        padding: EdgeInsets.all(18),
-        child: Text(
-            'तपाईंको खाता निष्क्रिय छ। कृपया Admin लाई सम्पर्क गर्नुहोस्।',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Colors.red, fontWeight: FontWeight.bold, fontSize: 17)),
-      )),
-      const SizedBox(height: 12),
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-            color: const Color(0xFF102A43),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.orange)),
-        child: const Column(children: [
-          Text('संस्थाको कुल बचत',
-              style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          SizedBox(height: 5),
-          Text('XXX',
-              style: TextStyle(
-                  color: Colors.red,
-                  fontSize: 23,
-                  fontWeight: FontWeight.w900)),
-        ]),
-      ),
-      const SizedBox(height: 12),
-      const Row(children: [
-        Expanded(
-            child: SummaryCard(
-                title: 'कुल बचत',
-                amount: 'XXX',
-                icon: Icons.savings,
-                color: Colors.red)),
-        SizedBox(width: 8),
-        Expanded(
-            child: SummaryCard(
-                title: 'बिमा',
-                amount: 'XXX',
-                icon: Icons.health_and_safety_outlined,
-                color: Colors.red)),
-      ]),
-      const SizedBox(height: 10),
-      const Row(children: [
-        Expanded(
-            child: SummaryCard(
-                title: 'ऋण',
-                amount: 'XXX',
-                icon: Icons.account_balance,
-                color: Colors.red)),
-        SizedBox(width: 8),
-        Expanded(
-            child: SummaryCard(
-                title: 'उपलब्ध कोष',
-                amount: 'XXX',
-                icon: Icons.account_balance_wallet,
-                color: Colors.red)),
-      ]),
-    ]);
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('member').doc(uid).snapshots(),
+      builder: (context, memberSnapshot) {
+        final profileImageUrl =
+            memberSnapshot.data?.data()?['profileImageUrl']?.toString();
+        return ListView(padding: const EdgeInsets.all(16), children: [
+          _DashboardAtmCard(
+            name: memberName.isEmpty ? DashboardContent.names[safe] : memberName,
+            photo: DashboardContent.photos[safe],
+            photoUrl: profileImageUrl,
+            background: DashboardContent.backgrounds[safe],
+            savings: 'XXX',
+            loan: 'XXX',
+            large: true,
+            redacted: true,
+          ),
+          const SizedBox(height: 12),
+          const Card(
+              child: Padding(
+            padding: EdgeInsets.all(18),
+            child: Text(
+                'तपाईंको खाता निष्क्रिय छ। कृपया Admin लाई सम्पर्क गर्नुहोस्।',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.red, fontWeight: FontWeight.bold, fontSize: 17)),
+          )),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: const Color(0xFF102A43),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.orange)),
+            child: const Column(children: [
+              Text('संस्थाको कुल बचत',
+                  style:
+                      TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              SizedBox(height: 5),
+              Text('XXX',
+                  style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 23,
+                      fontWeight: FontWeight.w900)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          const Row(children: [
+            Expanded(
+                child: SummaryCard(
+                    title: 'कुल बचत',
+                    amount: 'XXX',
+                    icon: Icons.savings,
+                    color: Colors.red)),
+            SizedBox(width: 8),
+            Expanded(
+                child: SummaryCard(
+                    title: 'बिमा',
+                    amount: 'XXX',
+                    icon: Icons.health_and_safety_outlined,
+                    color: Colors.red)),
+          ]),
+          const SizedBox(height: 10),
+          const Row(children: [
+            Expanded(
+                child: SummaryCard(
+                    title: 'ऋण',
+                    amount: 'XXX',
+                    icon: Icons.account_balance,
+                    color: Colors.red)),
+            SizedBox(width: 8),
+            Expanded(
+                child: SummaryCard(
+                    title: 'उपलब्ध कोष',
+                    amount: 'XXX',
+                    icon: Icons.account_balance_wallet,
+                    color: Colors.red)),
+          ]),
+        ]);
+      },
+    );
   }
+
 }
 
 class VotingMenuPage extends StatelessWidget {
@@ -1967,6 +1980,14 @@ class _DashboardContentState extends State<DashboardContent> {
             doc.data()['name'].toString().trim().replaceAll(RegExp(r'\s+'), ''):
                 doc.id,
         };
+        final disciplinePointsByUid = <String, int>{
+          for (final doc in memberSnapshot.data!.docs)
+            doc.id: (doc.data()['disciplinePoints'] as num?)?.toInt() ?? 0,
+        };
+        final profileImageUrlByUid = <String, String>{
+          for (final doc in memberSnapshot.data!.docs)
+            doc.id: doc.data()['profileImageUrl']?.toString() ?? '',
+        };
 
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _savingsService.watchAllRecords(),
@@ -2025,6 +2046,7 @@ class _DashboardContentState extends State<DashboardContent> {
                 int savingsPenaltyTotal = 0;
                 int insurancePenaltyTotal = 0;
                 int totalExpenses = 0;
+                int insuranceExpenses = 0;
 
                 for (final doc in fundSnapshot.data!.docs) {
                   final data = doc.data();
@@ -2039,6 +2061,10 @@ class _DashboardContentState extends State<DashboardContent> {
                       data['category'] == 'expense_withdrawal' &&
                       data['status'] == 'disbursed') {
                     totalExpenses += amount;
+                  } else if (data['fundType'] == 'expense' &&
+                      data['category'] == 'insurance_claim_payout' &&
+                      data['status'] == 'disbursed') {
+                    insuranceExpenses += amount;
                   }
                 }
 
@@ -2071,15 +2097,51 @@ class _DashboardContentState extends State<DashboardContent> {
                           (data['interestPaid'] as num?)?.toInt() ?? 0;
                     }
 
-                    final totalInstitutionSavings = institutionSavings +
-                        savingsPenaltyTotal +
-                        loanInterestIncome -
-                        totalExpenses;
-
-                    final totalInstitutionInsurance =
-                        institutionInsurance + insurancePenaltyTotal;
-
                     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('bank_interest_transactions')
+                          .snapshots(),
+                      builder: (context, interestSnapshot) {
+                        if (interestSnapshot.hasError) {
+                          return const Center(
+                            child: Text('बैंक ब्याज विवरण लोड भएन।'),
+                          );
+                        }
+                        if (!interestSnapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        int generalBankInterest = 0;
+                        int insuranceBankInterest = 0;
+                        for (final doc in interestSnapshot.data!.docs) {
+                          final data = doc.data();
+                          if (data['isTest'] == true ||
+                              data['isInstitutionIncome'] == false) {
+                            continue;
+                          }
+                          final amount =
+                              (data['amount'] as num?)?.toInt() ?? 0;
+                          if (data['fundType'] == 'general') {
+                            generalBankInterest += amount;
+                          } else if (data['fundType'] == 'insurance') {
+                            insuranceBankInterest += amount;
+                          }
+                        }
+
+                        final totalInstitutionSavings = institutionSavings +
+                            savingsPenaltyTotal +
+                            loanInterestIncome +
+                            generalBankInterest -
+                            totalExpenses;
+
+                        final totalInstitutionInsurance =
+                            institutionInsurance +
+                            insurancePenaltyTotal +
+                            insuranceBankInterest -
+                            insuranceExpenses;
+
+                        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: _loanService.watchActiveLoans(),
                       builder: (context, loanSnapshot) {
                         if (loanSnapshot.hasError) {
@@ -2141,17 +2203,43 @@ class _DashboardContentState extends State<DashboardContent> {
                             _DashboardAtmCard(
                               name: DashboardContent.names[safeIndex],
                               photo: DashboardContent.photos[safeIndex],
+                              photoUrl: profileImageUrlByUid[widget.uid],
                               background:
                                   DashboardContent.backgrounds[safeIndex],
                               savings: 'रु. $ownSavings',
                               loan: 'रु. ${loanTotals[widget.uid] ?? 0}',
+                              disciplinePoints:
+                                  disciplinePointsByUid[widget.uid] ?? 0,
                               large: true,
+                              onSavingsTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ContributionHistoryPage(
+                                    fundType: 'savings',
+                                    memberUid: widget.uid,
+                                    memberName: widget.memberName,
+                                  ),
+                                ),
+                              ),
                             ),
 
                             const SizedBox(height: 14),
 
                             Center(
-                              child: Container(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ContributionHistoryPage(
+                                      fundType: 'savings',
+                                      showAllMembers: true,
+                                      fundBalance: totalInstitutionSavings,
+                                      fundBalanceLabel: 'संस्थाको कुल बचत मौज्दात',
+                                    ),
+                                  ),
+                                ),
+                                child: Container(
                                 width: 300,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 20,
@@ -2203,6 +2291,7 @@ class _DashboardContentState extends State<DashboardContent> {
                                     ),
                                   ],
                                 ),
+                                ),
                               ),
                             ),
 
@@ -2224,6 +2313,16 @@ class _DashboardContentState extends State<DashboardContent> {
                                     amount: 'रु. $ownSavings',
                                     icon: Icons.savings,
                                     color: const Color(0xFF167D46),
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ContributionHistoryPage(
+                                          fundType: 'savings',
+                                          memberUid: widget.uid,
+                                          memberName: widget.memberName,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -2233,6 +2332,16 @@ class _DashboardContentState extends State<DashboardContent> {
                                     amount: 'रु. $ownInsurance',
                                     icon: Icons.health_and_safety_outlined,
                                     color: const Color(0xFF2469B3),
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ContributionHistoryPage(
+                                          fundType: 'insurance',
+                                          memberUid: widget.uid,
+                                          memberName: widget.memberName,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -2256,6 +2365,17 @@ class _DashboardContentState extends State<DashboardContent> {
                                     amount: 'रु. $totalInstitutionInsurance',
                                     icon: Icons.health_and_safety,
                                     color: const Color(0xFF2469B3),
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ContributionHistoryPage(
+                                          fundType: 'insurance',
+                                          showAllMembers: true,
+                                          fundBalance: totalInstitutionInsurance,
+                                          fundBalanceLabel: 'संस्थाको कुल बीमा मौज्दात',
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -2349,15 +2469,34 @@ class _DashboardContentState extends State<DashboardContent> {
 
                             // Remaining five members
                             ...otherMembers.map((index) {
+                              final otherUid = memberUidByName[
+                                    DashboardContent.names[index]
+                                        .trim()
+                                        .replaceAll(RegExp(r'\s+'), '')
+                                  ] ??
+                                  '';
                               return _DashboardAtmCard(
                                 name: DashboardContent.names[index],
                                 photo: DashboardContent.photos[index],
+                                photoUrl: profileImageUrlByUid[otherUid],
                                 background: DashboardContent.backgrounds[index],
-                                savings:
-                                    'रु. ${savingsTotals[memberUidByName[DashboardContent.names[index].trim().replaceAll(RegExp(r'\s+'), '')] ?? ''] ?? 0}',
-                                loan:
-                                    'रु. ${loanTotals[memberUidByName[DashboardContent.names[index].trim().replaceAll(RegExp(r'\s+'), '')] ?? ''] ?? 0}',
+                                savings: 'रु. ${savingsTotals[otherUid] ?? 0}',
+                                loan: 'रु. ${loanTotals[otherUid] ?? 0}',
+                                disciplinePoints:
+                                    disciplinePointsByUid[otherUid] ?? 0,
                                 large: false,
+                                onSavingsTap: otherUid.isEmpty
+                                    ? null
+                                    : () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ContributionHistoryPage(
+                                              fundType: 'savings',
+                                              memberUid: otherUid,
+                                              memberName: DashboardContent.names[index],
+                                            ),
+                                          ),
+                                        ),
                               );
                             }),
 
@@ -2422,6 +2561,8 @@ class _DashboardContentState extends State<DashboardContent> {
                         );
                       },
                     );
+                      },
+                    );
                   },
                 );
               },
@@ -2441,6 +2582,9 @@ class _DashboardAtmCard extends StatelessWidget {
   final String loan;
   final bool large;
   final bool redacted;
+  final String? photoUrl;
+  final int disciplinePoints;
+  final VoidCallback? onSavingsTap;
 
   const _DashboardAtmCard({
     required this.name,
@@ -2450,6 +2594,9 @@ class _DashboardAtmCard extends StatelessWidget {
     required this.loan,
     required this.large,
     this.redacted = false,
+    this.photoUrl,
+    this.disciplinePoints = 0,
+    this.onSavingsTap,
   });
 
   @override
@@ -2485,17 +2632,30 @@ class _DashboardAtmCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(large ? 28 : 22),
-                  child: Image.asset(
-                    photo,
-                    width: large ? 56 : 44,
-                    height: large ? 56 : 44,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                      Icons.person,
-                      color: Colors.white,
-                      size: 42,
-                    ),
-                  ),
+                  child: (photoUrl != null && photoUrl!.trim().isNotEmpty)
+                      ? Image.network(
+                          photoUrl!,
+                          width: large ? 56 : 44,
+                          height: large ? 56 : 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Image.asset(
+                            photo,
+                            width: large ? 56 : 44,
+                            height: large ? 56 : 44,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Image.asset(
+                          photo,
+                          width: large ? 56 : 44,
+                          height: large ? 56 : 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 42,
+                          ),
+                        ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2508,6 +2668,50 @@ class _DashboardAtmCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (!redacted) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: disciplinePoints > 0
+                            ? const Color(0xFF8EF0A7)
+                            : disciplinePoints < 0
+                                ? const Color(0xFFFF8A80)
+                                : Colors.white54,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.emoji_events_outlined,
+                          size: large ? 16 : 14,
+                          color: disciplinePoints > 0
+                              ? const Color(0xFF8EF0A7)
+                              : disciplinePoints < 0
+                                  ? const Color(0xFFFF8A80)
+                                  : Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'अनुशासन अंक ${disciplinePoints > 0 ? '+' : ''}$disciplinePoints',
+                          style: TextStyle(
+                            color: disciplinePoints > 0
+                                ? const Color(0xFF8EF0A7)
+                                : disciplinePoints < 0
+                                    ? const Color(0xFFFF8A80)
+                                    : Colors.white,
+                            fontSize: large ? 10 : 8,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 const Icon(
                   Icons.credit_card,
                   color: Color(0xFFFFD166),
@@ -2520,25 +2724,35 @@ class _DashboardAtmCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'कुल बचत',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
+                  child: InkWell(
+                    onTap: redacted ? null : onSavingsTap,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'कुल बचत',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                          Text(
+                            savings,
+                            style: TextStyle(
+                              color: redacted ? Colors.redAccent : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: large ? 16 : 13,
+                              decoration: onSavingsTap == null || redacted
+                                  ? TextDecoration.none
+                                  : TextDecoration.underline,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        savings,
-                        style: TextStyle(
-                          color: redacted ? Colors.redAccent : Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: large ? 16 : 13,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 Expanded(
@@ -2820,6 +3034,7 @@ class _MemberProfilePageState extends State<MemberProfilePage> {
 
   bool _profileFieldsLoaded = false;
   bool _isSavingProfile = false;
+  bool _isUploadingProfileImage = false;
   bool _biometricEnabled = false;
   bool _biometricBusy = false;
   bool _profileEditing = false;
@@ -2832,6 +3047,84 @@ class _MemberProfilePageState extends State<MemberProfilePage> {
 
   void _markProfileDirty() {
     if (!_profileDirty && mounted) setState(() => _profileDirty = true);
+  }
+
+  Future<void> _pickProfileImage() async {
+    if (_isUploadingProfileImage) return;
+    try {
+      final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Gallery बाट छान्नुहोस्'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Camera बाट खिच्नुहोस्'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (source == null || !mounted) return;
+      final selected = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1200,
+      );
+      if (selected == null || !mounted) return;
+
+      setState(() => _isUploadingProfileImage = true);
+      final bytes = await selected.readAsBytes();
+      final extension = selected.name.contains('.')
+          ? selected.name.split('.').last.toLowerCase()
+          : 'jpg';
+      final path =
+          'member_profiles/${widget.uid}/profile_${DateTime.now().millisecondsSinceEpoch}.$extension';
+      await Supabase.instance.client.storage
+          .from('expense_vouchers')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: selected.mimeType ?? 'image/jpeg',
+              upsert: false,
+            ),
+          )
+          .timeout(const Duration(seconds: 45));
+
+      final imageUrl = Supabase.instance.client.storage
+          .from('expense_vouchers')
+          .getPublicUrl(path);
+      await FirebaseFirestore.instance.collection('member').doc(widget.uid).update({
+        'profileImageUrl': imageUrl,
+        'profileImageUpdatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile तस्बिर सफलतापूर्वक सुरक्षित भयो।'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Profile तस्बिर सुरक्षित हुन सकेन: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingProfileImage = false);
+    }
   }
 
   bool get _hasNewFamilyInput => _newFamilyMemberControllers
@@ -3122,9 +3415,29 @@ class _MemberProfilePageState extends State<MemberProfilePage> {
           child: Column(
             children: [
               const SizedBox(height: 20),
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 48,
-                child: Icon(Icons.person, size: 55),
+                backgroundColor: const Color(0xFFE8EEF8),
+                backgroundImage: (data['profileImageUrl']?.toString().isNotEmpty == true)
+                    ? NetworkImage(data['profileImageUrl'].toString())
+                    : null,
+                child: (data['profileImageUrl']?.toString().isNotEmpty == true)
+                    ? null
+                    : const Icon(Icons.person, size: 55),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _isUploadingProfileImage ? null : _pickProfileImage,
+                icon: _isUploadingProfileImage
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add_a_photo_outlined),
+                label: Text(_isUploadingProfileImage
+                    ? 'तस्बिर सुरक्षित हुँदैछ...'
+                    : 'Profile तस्बिर छान्नुहोस्'),
               ),
               const SizedBox(height: 14),
               Text(
@@ -3985,11 +4298,11 @@ class _PaymentFormPageState extends State<PaymentFormPage> {
         'शनिबार',
       ];
 
-      final bsDate =
+      final currentBsDate =
           '${bsNow.year} साल ${bsMonths[bsNow.month - 1]} ${bsNow.day} गते ${weekdays[bsNow.weekday - 1]}';
-
-      // BS मिति र महिना हाल प्रयोगकर्ताले भरेको मानबाट लिइन्छ।
-      // स्वचालित BS/AD रूपान्तरण अर्को चरणमा जोडिनेछ।
+      final bsDate = _paymentType == 'donation'
+          ? _monthController.text.trim()
+          : currentBsDate;
 
       await PaymentService().submitPayment(
         memberUid: widget.uid,
@@ -4422,7 +4735,8 @@ class _PaymentFormPageState extends State<PaymentFormPage> {
                 decoration: const InputDecoration(
                   labelText: 'चन्दा/दान मिति (BS)',
                   border: OutlineInputBorder(),
-                  helperText: 'चन्दा/दानको मिति लेख्नुहोस्।',
+                  hintText: 'उदाहरण: 2083 साल कार्तिक 15 गते',
+                  helperText: 'नेपाली वर्ष, महिना र गते लेख्नुहोस्।',
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -6607,23 +6921,36 @@ class AdminFinancialReportsMenuPage extends StatelessWidget {
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
+                Widget? destination;
                 if (index == 0) {
+                  destination = FinancialReportPage(
+                    memberUid: FirebaseAuth.instance.currentUser!.uid,
+                    memberName: 'प्रशासक',
+                    role: 'admin',
+                  );
+                } else if (index == 1) {
+                  destination = const AdminFinancialAccountsPage();
+                } else if (index == 2) {
+                  destination = const MonthlyFinancialReportPage();
+                } else if (index == 3) {
+                  destination = const AnnualFinancialReportPage();
+                } else if (index == 4) {
+                  destination = const MemberReportsPage();
+                } else if (index == 5) {
+                  destination = const MemberReportHistoryPage();
+                } else if (index == 6) {
+                  destination = const AdminAuditHistoryPage();
+                }
+
+                if (destination != null) {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => FinancialReportPage(
-                        memberUid: FirebaseAuth.instance.currentUser!.uid,
-                        memberName: 'प्रशासक',
-                        role: 'admin',
-                      ),
-                    ),
+                    MaterialPageRoute(builder: (_) => destination!),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'यो सुविधा अर्को चरणमा जोडिनेछ।',
-                      ),
+                    const SnackBar(
+                      content: Text('यो प्रतिवेदन सुविधा हाल उपलब्ध छैन।'),
                     ),
                   );
                 }
@@ -7705,8 +8032,16 @@ class _ExpenseWithdrawalAdminPageState
   }
 }
 
-class PaymentApprovalPage extends StatelessWidget {
+class PaymentApprovalPage extends StatefulWidget {
   const PaymentApprovalPage({super.key});
+
+  @override
+  State<PaymentApprovalPage> createState() => _PaymentApprovalPageState();
+}
+
+class _PaymentApprovalPageState extends State<PaymentApprovalPage> {
+  final Set<String> _busyPaymentIds = {};
+  final Map<String, String> _busyActions = {};
 
   Future<void> _approve(
     BuildContext context,
@@ -7714,59 +8049,64 @@ class PaymentApprovalPage extends StatelessWidget {
     int originalAmount,
     String adminUid,
   ) async {
+    if (_busyPaymentIds.contains(paymentId)) return;
+    setState(() {
+      _busyPaymentIds.add(paymentId);
+      _busyActions[paymentId] = 'approve';
+    });
+
     final controller = TextEditingController(
       text: originalAmount.toString(),
     );
 
-    final approvedAmount = await showDialog<int>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('भुक्तानी स्वीकृति'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('पेस गरिएको रकम: रु. $originalAmount'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'स्वीकृत रकम (रु.)',
-                border: OutlineInputBorder(),
+    try {
+      final approvedAmount = await showDialog<int>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('भुक्तानी स्वीकृति'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('पेस गरिएको रकम: रु. $originalAmount'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'स्वीकृत रकम (रु.)',
+                  border: OutlineInputBorder(),
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('रद्द गर्नुहोस्'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final amount = int.tryParse(controller.text.trim());
+                if (amount == null || amount <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('सही रकम लेख्नुहोस्।'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, amount);
+              },
+              child: const Text('स्वीकृत गर्नुहोस्'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('रद्द गर्नुहोस्'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final amount = int.tryParse(controller.text.trim());
-              if (amount == null || amount <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('सही रकम लेख्नुहोस्।'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              Navigator.pop(dialogContext, amount);
-            },
-            child: const Text('स्वीकृत गर्नुहोस्'),
-          ),
-        ],
-      ),
-    );
+      );
+      controller.dispose();
 
-    controller.dispose();
+      if (approvedAmount == null || !context.mounted) return;
 
-    if (approvedAmount == null || !context.mounted) return;
-
-    try {
       await PaymentService().approvePayment(
         paymentId: paymentId,
         adminUid: adminUid,
@@ -7787,18 +8127,21 @@ class PaymentApprovalPage extends StatelessWidget {
       debugPrint('APPROVE ERROR TYPE: ${e.runtimeType}');
       debugPrint('APPROVE ERROR: $e');
       debugPrint('APPROVE STACK: $stackTrace');
-
       if (!context.mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'स्वीकृति असफल: ${e.runtimeType}\n$e',
-          ),
+          content: Text('स्वीकृति असफल: ${e.runtimeType}\n$e'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 15),
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busyPaymentIds.remove(paymentId);
+          _busyActions.remove(paymentId);
+        });
+      }
     }
   }
 
@@ -7807,55 +8150,59 @@ class PaymentApprovalPage extends StatelessWidget {
     String paymentId,
     String adminUid,
   ) async {
+    if (_busyPaymentIds.contains(paymentId)) return;
+    setState(() {
+      _busyPaymentIds.add(paymentId);
+      _busyActions[paymentId] = 'reject';
+    });
+
     final controller = TextEditingController();
-
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('भुक्तानी अस्वीकार'),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'अस्वीकार गर्नुको कारण',
-            hintText: 'कारण लेख्नुहोस्',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('रद्द गर्नुहोस्'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('अस्वीकारको कारण लेख्नुहोस्।'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              Navigator.pop(dialogContext, value);
-            },
-            child: const Text('अस्वीकार गर्नुहोस्'),
-          ),
-        ],
-      ),
-    );
-
-    controller.dispose();
-
-    if (reason == null || !context.mounted) return;
-
     try {
+      final reason = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('भुक्तानी अस्वीकार'),
+          content: TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'अस्वीकार गर्नुको कारण',
+              hintText: 'कारण लेख्नुहोस्',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('रद्द गर्नुहोस्'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('अस्वीकारको कारण लेख्नुहोस्।'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('अस्वीकार गर्नुहोस्'),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+
+      if (reason == null || !context.mounted) return;
+
       await PaymentService().rejectPayment(
         paymentId: paymentId,
         adminUid: adminUid,
@@ -7877,28 +8224,29 @@ class PaymentApprovalPage extends StatelessWidget {
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busyPaymentIds.remove(paymentId);
+          _busyActions.remove(paymentId);
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
-
     if (currentUser == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('भुक्तानी स्वीकृति')),
-        body: const Center(
-          child: Text('पहिले लगइन गर्नुहोस्।'),
-        ),
+        body: const Center(child: Text('पहिले लगइन गर्नुहोस्।')),
       );
     }
 
     final adminUid = currentUser.uid;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('भुक्तानी स्वीकृति'),
-      ),
+      appBar: AppBar(title: const Text('भुक्तानी स्वीकृति')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: PaymentService().watchPendingPayments(),
         builder: (context, snapshot) {
@@ -7911,19 +8259,12 @@ class PaymentApprovalPage extends StatelessWidget {
               ),
             );
           }
-
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
-
           final docs = snapshot.data?.docs ?? [];
-
           if (docs.isEmpty) {
-            return const Center(
-              child: Text('अहिले स्वीकृतिका लागि भुक्तानी छैन।'),
-            );
+            return const Center(child: Text('अहिले स्वीकृतिका लागि भुक्तानी छैन।'));
           }
 
           return ListView.builder(
@@ -7937,6 +8278,8 @@ class PaymentApprovalPage extends StatelessWidget {
               final dateText = createdAt == null
                   ? 'पेस गरिएको समय: उपलब्ध छैन'
                   : 'पेस गरिएको: ${createdAt.toDate().toLocal()}';
+              final isBusy = _busyPaymentIds.contains(doc.id);
+              final busyAction = _busyActions[doc.id];
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -7964,9 +8307,7 @@ class PaymentApprovalPage extends StatelessWidget {
                         ),
                         title: Text(
                           data['memberName']?.toString() ?? 'नाम छैन',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
                           'रकम: रु. $amount\n'
@@ -7975,43 +8316,55 @@ class PaymentApprovalPage extends StatelessWidget {
                           'AD मिति: ${data['adDate'] ?? '-'}',
                         ),
                         isThreeLine: true,
-                        trailing: const Chip(
-                          label: Text('Pending'),
+                        trailing: const Chip(label: Text('Pending')),
+                      ),
+                      Text(dateText, style: const TextStyle(fontSize: 12)),
+                      if (isBusy) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(busyAction == 'reject'
+                                ? 'भुक्तानी अस्वीकृत हुँदैछ...'
+                                : 'भुक्तानी स्वीकृत हुँदैछ...'),
+                          ],
                         ),
-                      ),
-                      Text(
-                        dateText,
-                        style: const TextStyle(fontSize: 12),
-                      ),
+                      ],
                       const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: () => _approve(
-                                context,
-                                doc.id,
-                                amount,
-                                adminUid,
-                              ),
+                              onPressed: isBusy
+                                  ? null
+                                  : () => _approve(context, doc.id, amount, adminUid),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
+                                disabledBackgroundColor: Colors.grey,
                               ),
-                              child: const Text('स्वीकृत / रकम सच्याउने'),
+                              child: Text(busyAction == 'approve'
+                                  ? 'प्रक्रिया हुँदैछ...'
+                                  : 'स्वीकृत / रकम सच्याउने'),
                             ),
                           ),
                           const SizedBox(width: 8),
                           OutlinedButton(
-                            onPressed: () => _reject(
-                              context,
-                              doc.id,
-                              adminUid,
-                            ),
+                            onPressed: isBusy
+                                ? null
+                                : () => _reject(context, doc.id, adminUid),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red,
+                              disabledForegroundColor: Colors.grey,
                             ),
-                            child: const Text('अस्वीकार'),
+                            child: Text(busyAction == 'reject'
+                                ? 'प्रक्रिया हुँदैछ...'
+                                : 'अस्वीकार'),
                           ),
                         ],
                       ),
