@@ -302,7 +302,7 @@ class _BankInterestPageState extends State<BankInterestPage> {
       body: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
             children: [
               Card(
                 elevation: 2,
@@ -521,20 +521,53 @@ class _BankInterestPageState extends State<BankInterestPage> {
                     ],
                   ),
                 ),
-              if (_message.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 18),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _message.startsWith('त्रुटि')
-                        ? Colors.red.shade50
-                        : Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(_message),
-                ),
             ],
           ),
+          if (_message.isNotEmpty)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 8,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  elevation: 14,
+                  color: _message.startsWith('त्रुटि')
+                      ? Colors.red.shade800
+                      : Colors.green.shade800,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 15,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _message.startsWith('त्रुटि')
+                              ? Icons.error_outline
+                              : Icons.check_circle_outline,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _message,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_loading)
             Container(
               color: Colors.black.withValues(alpha: 0.08),
