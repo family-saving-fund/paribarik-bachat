@@ -400,11 +400,11 @@ class _AnnualFinancialReportPageState extends State<AnnualFinancialReportPage> {
     );
   }
 
-  Widget _row(String label, num value, {Color? color}) => Padding(
+  Widget _row(String label, num value, {Color? color, bool bold = false}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(children: [
-          Expanded(child: Text(label)),
-          Text(_money(value), style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+          Expanded(child: Text(label, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal))),
+          Text(_money(value), style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal, color: color)),
         ]),
       );
 
